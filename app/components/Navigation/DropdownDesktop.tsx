@@ -31,6 +31,11 @@ const DropdownDesktop = ({
       name: "Reviews",
       link: "/reviews",
     },
+    {
+      id: "5",
+      name: "AI Picks",
+      link: "/recommendations",
+    },
   ];
 
   return (
