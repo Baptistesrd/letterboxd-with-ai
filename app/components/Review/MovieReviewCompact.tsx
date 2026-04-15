@@ -4,6 +4,7 @@ import { auth } from "../../firebase/firebase";
 
 import Link from "next/link";
 import { Review } from "app/types";
+import { StarDisplay } from "./StarRating";
 
 export const MovieReviewCompact = ({
   review,
@@ -66,6 +67,11 @@ export const MovieReviewCompact = ({
             </p>
           )}
         </div>{" "}
+        {review.rating !== undefined && (
+          <div className="pt-1">
+            <StarDisplay rating={review.rating} />
+          </div>
+        )}
         <p className="text-sh-grey pt-2">{review.review}</p>
       </div>
     </div>

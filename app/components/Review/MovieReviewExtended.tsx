@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Movie, Review, UserReview } from "app/types";
+import { StarDisplay } from "./StarRating";
 
 export const MovieReviewExtended = ({
   review,
@@ -52,6 +53,11 @@ export const MovieReviewExtended = ({
         </div>
         {review?.timestamp && (
           <p className="text-sh-grey text-xs">{review.timestamp}</p>
+        )}
+        {review.rating !== undefined && (
+          <div className="pt-1">
+            <StarDisplay rating={review.rating} />
+          </div>
         )}
         <p className="text-sh-grey pt-2 text-sm">{review.review}</p>
       </div>

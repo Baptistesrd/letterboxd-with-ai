@@ -2,6 +2,7 @@ export interface UserReview {
   review: string;
   movieID: string;
   timestamp?: string;
+  rating?: number;
 }
 
 export interface UserFavourite {
@@ -29,6 +30,7 @@ export interface Review {
   userURL: string;
   review: string;
   timestamp?: string;
+  rating?: number;
 }
 
 export interface Movie {

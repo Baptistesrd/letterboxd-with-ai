@@ -12,11 +12,13 @@ import {
 import { auth, db } from "../../firebase/firebase";
 import { createReviewPopup, PopupAction } from "../../utils";
 import { MovieReviewCompact } from "../Review/MovieReviewCompact";
+import { StarSelector } from "../Review/StarRating";
 import moment from "moment";
 import { Review } from "app/types";
 
 export const MovieReviews = ({ movie }) => {
   const [review, setReview] = useState("");
+  const [rating, setRating] = useState(0);
   const [reviews, setReviews] = useState<Review[]>([]);
 
   const submitReview = async (e: any, review: string) => {
@@ -35,6 +37,7 @@ export const MovieReviews = ({ movie }) => {
     } finally {
       fetchReviewsByMovie(); // Refetch reviews
       setReview(""); // Cleanup input
+      setRating(0);
     }
   };
 
@@ -52,6 +55,7 @@ export const MovieReviews = ({ movie }) => {
         movieID: movie.id,
         review: review,
         timestamp: getDate(),
+        ...(rating > 0 && { rating }),
       }),
     });
   };
@@ -92,6 +96,7 @@ export const MovieReviews = ({ movie }) => {
           review: review,
           uid: auth.currentUser.uid,
           timestamp: getDate(),
+          ...(rating > 0 && { rating }),
         }),
       });
 
@@ -114,6 +119,7 @@ export const MovieReviews = ({ movie }) => {
             userURL: auth.currentUser.photoURL,
             uid: auth.currentUser.uid,
             timestamp: getDate(),
+            ...(rating > 0 && { rating }),
           },
         ],
       });
@@ -143,6 +149,7 @@ export const MovieReviews = ({ movie }) => {
       movieID: review.movieID,
       review: review.review,
       timestamp: review.timestamp,
+      ...(review.rating !== undefined && { rating: review.rating }),
     };
 
     const movieRef = doc(db, "movies", review.movieID.toString());
@@ -202,6 +209,7 @@ export const MovieReviews = ({ movie }) => {
           className="flex flex-col gap-2"
           onSubmit={(e) => submitReview(e, review)}
         >
+          <StarSelector rating={rating} setRating={setRating} />
           <textarea
             className="active-outline-none bg-h-grey text-drop-black rounded p-3 focus:outline-none"
             value={review}
