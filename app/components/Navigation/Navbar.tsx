@@ -37,6 +37,11 @@ const menuLinks = [
     name: "REVIEWS",
     href: "/reviews",
   },
+  {
+    id: 5,
+    name: "STATS",
+    href: "/stats",
+  },
 ];
 
 const Navbar = ({ userName, profilePic, isLoggedIn, isTransparentNav }) => {

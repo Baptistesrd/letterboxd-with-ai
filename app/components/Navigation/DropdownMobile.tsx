@@ -29,6 +29,11 @@ export const DropdownMobile = ({ userName, profilePic }) => {
       name: "Reviews",
       link: "/reviews",
     },
+    {
+      id: "5",
+      name: "Stats",
+      link: "/stats",
+    },
   ];
 
   return (
