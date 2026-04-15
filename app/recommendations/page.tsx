@@ -185,39 +185,26 @@ function computeProfile(
 
 function buildPrompt(
   profile: TasteProfile,
-  watchedIds: string[],
+  _watchedIds: string[],
   seed: number
 ): string {
-  const loved = profile.lovedFilms
-    .map(
-      (f) =>
-        `- ${f.title} (${f.year}) [${f.genres.join(", ")}] dir. ${f.director} ★${f.rating}`
-    )
-    .join("\n");
+  const parts: string[] = [
+    `Films watched: ${profile.watchedCount}. Seed: ${seed}.`,
+    `Genres: ${profile.topGenres.slice(0, 5).map((g) => g.name).join(", ")}`,
+    `Directors: ${profile.topDirectors.slice(0, 5).map((d) => d.name).join(", ")}`,
+    `Actors: ${profile.topActors.slice(0, 5).map((a) => a.name).join(", ")}`,
+    `Decades: ${profile.topDecades.slice(0, 3).map((d) => d.decade).join(", ")}`,
+  ];
 
-  const disliked = profile.dislikedFilms
-    .map((f) => `- ${f.title} (${f.year}) [${f.genres.join(", ")}]`)
-    .join("\n");
+  if (profile.ratedCount > 0) {
+    parts.push(`Avg rating: ${profile.avgRating.toFixed(1)}/5`);
+  }
 
-  return `I've watched ${profile.watchedCount} films. Recommend 20 films I would love but haven't seen.
+  parts.push(
+    `Recommend 20 films I haven't seen. Return JSON only: [{"title":"...","year":2020,"reason":"...","tmdb_id":12345}]`
+  );
 
-MY TASTE PROFILE:
-Top Genres: ${profile.topGenres.map((g) => `${g.name} (${g.count} films)`).join(", ")}
-Top Directors: ${profile.topDirectors.map((d) => `${d.name} (${d.count} films)`).join(", ")}
-Top Actors: ${profile.topActors.map((a) => `${a.name} (${a.count} films)`).join(", ")}
-Favorite Decades: ${profile.topDecades.map((d) => `${d.decade}: ${d.count} films`).join(", ")}
-${profile.ratedCount > 0 ? `Average Rating: ${profile.avgRating.toFixed(1)}/5 across ${profile.ratedCount} rated films` : "No ratings yet"}
-
-${loved ? `FILMS I LOVED (≥4★ — find similar gems):\n${loved}` : ""}
-
-${disliked ? `FILMS I DISLIKED (≤2★ — avoid similar):\n${disliked}` : ""}
-
-TMDB IDs I've already watched (exclude ALL of these): ${watchedIds.slice(0, 100).join(", ")}
-
-Variety seed (for fresh results): ${seed}
-
-Return ONLY a JSON array of exactly 20 recommendations:
-[{"title":"...","year":2020,"reason":"...","tmdb_id":12345}]`;
+  return parts.join("\n");
 }
 
 // ─── INLINE COMPONENTS ────────────────────────────────────────────────────────
