@@ -1,9 +1,9 @@
-// import-watched.mjs
+﻿// import-watched.mjs
 // Usage: node import-watched.mjs
 //
 // Avant de lancer :
 // 1. npm install firebase-admin csv-parse
-// 2. Télécharge ta clé de service Firebase (voir instructions ci-dessous)
+// 2. TÃ©lÃ©charge ta clÃ© de service Firebase (voir instructions ci-dessous)
 // 3. Renseigne les variables en haut du fichier
 
 import { readFileSync } from "fs";
@@ -14,9 +14,9 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 // ============================================================
 // CONFIGURE ICI
 // ============================================================
-const SERVICE_ACCOUNT_PATH = "./service-account.json"; // clé Firebase Admin (voir README)
+const SERVICE_ACCOUNT_PATH = "./service-account.json"; // clÃ© Firebase Admin (voir README)
 const CSV_PATH = "./watched.csv";                        // ton fichier CSV
-const TMDB_API_KEY = "REMPLACE_PAR_TA_CLE_TMDB";        // ta clé TMDB
+const TMDB_API_KEY = "5c8c1fbb837d1ab120b1db2a8acba21a";        // ta clÃ© TMDB
 const USER_UID = "SUS1NtIgjfZRrCIdBfVieKlpJDb2";                 // ton UID Firebase (visible dans Authentication > Users)
 // ============================================================
 
@@ -43,7 +43,7 @@ async function main() {
   const csv = readFileSync(CSV_PATH, "utf-8");
   const records = parse(csv, { columns: true, skip_empty_lines: true });
 
-  console.log(`📽️  ${records.length} films à importer...`);
+  console.log(`ðŸ“½ï¸  ${records.length} films Ã  importer...`);
 
   const watchedList = [];
   let notFound = [];
@@ -54,39 +54,40 @@ async function main() {
 
     if (tmdbId) {
       watchedList.push({ movieID: tmdbId });
-      console.log(`✅ [${i + 1}/${records.length}] ${Name} (${Year}) → ID ${tmdbId}`);
+      console.log(`âœ… [${i + 1}/${records.length}] ${Name} (${Year}) â†’ ID ${tmdbId}`);
     } else {
       notFound.push({ Name, Year });
-      console.log(`❌ [${i + 1}/${records.length}] ${Name} (${Year}) → non trouvé`);
+      console.log(`âŒ [${i + 1}/${records.length}] ${Name} (${Year}) â†’ non trouvÃ©`);
     }
 
     // Respecter le rate limit TMDB (40 req/10s)
     if ((i + 1) % 35 === 0) {
-      console.log("⏳ Pause 10s pour le rate limit TMDB...");
+      console.log("â³ Pause 10s pour le rate limit TMDB...");
       await sleep(10000);
     } else {
       await sleep(100);
     }
   }
 
-  console.log(`\n📦 Import de ${watchedList.length} films dans Firestore...`);
+  console.log(`\nðŸ“¦ Import de ${watchedList.length} films dans Firestore...`);
 
-  // Firestore limite les arrayUnion à ~500 éléments par requête
+  // Firestore limite les arrayUnion Ã  ~500 Ã©lÃ©ments par requÃªte
   const chunkSize = 400;
   for (let i = 0; i < watchedList.length; i += chunkSize) {
     const chunk = watchedList.slice(i, i + chunkSize);
     await db.collection("users").doc(USER_UID).update({
       watched: FieldValue.arrayUnion(...chunk),
     });
-    console.log(`✅ Chunk ${Math.floor(i / chunkSize) + 1} importé (${chunk.length} films)`);
+    console.log(`âœ… Chunk ${Math.floor(i / chunkSize) + 1} importÃ© (${chunk.length} films)`);
   }
 
-  console.log("\n🎉 Import terminé !");
+  console.log("\nðŸŽ‰ Import terminÃ© !");
 
   if (notFound.length > 0) {
-    console.log(`\n⚠️  ${notFound.length} films non trouvés sur TMDB :`);
+    console.log(`\nâš ï¸  ${notFound.length} films non trouvÃ©s sur TMDB :`);
     notFound.forEach(({ Name, Year }) => console.log(`  - ${Name} (${Year})`));
   }
 }
 
 main().catch(console.error);
+
