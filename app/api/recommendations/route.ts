@@ -7,38 +7,42 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "Recommendation service is not configured." },
-      { status: 503 }
-    );
-  }
-
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2000,
-        system: `You are a world-class film critic and recommendation engine.
+    const geminiKey = process.env.GEMINI_API_KEY;
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `You are a world-class film critic and recommendation engine.
 Analyze the user's viewing patterns and ratings to recommend films they haven't seen yet.
 Return ONLY a valid JSON array — no markdown, no explanation, no code blocks.
 Format: [{"title": string, "year": number, "reason": string, "tmdb_id": number}]
 The "reason" must be 1-2 sentences explaining why THIS specific viewer would love this film based on their unique taste profile.
-Include both acclaimed classics and hidden gems. Prioritize variety across genres and decades.`,
-        messages: [{ role: "user", content: body.prompt }],
-      }),
-    });
+Include both acclaimed classics and hidden gems. Prioritize variety across genres and decades.
+
+${body.prompt}`,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            maxOutputTokens: 1000,
+          },
+        }),
+      }
+    );
 
     if (!response.ok) {
       const text = await response.text();
-      console.error("Anthropic API error:", response.status, text);
+      console.error("Gemini API error:", response.status, text);
       return NextResponse.json(
         { error: `AI service error (${response.status})` },
         { status: 502 }
@@ -46,7 +50,8 @@ Include both acclaimed classics and hidden gems. Prioritize variety across genre
     }
 
     const data = await response.json();
-    const rawText: string = data.content?.[0]?.text ?? "[]";
+    const rawText: string =
+      data.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
 
     // Strip any accidental markdown code fences Claude might add
     const cleaned = rawText
