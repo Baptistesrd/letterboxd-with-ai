@@ -7,6 +7,7 @@ export interface OLBook {
   key: string;
   title: string;
   author_name?: string[];
+  author_key?: string[];   // e.g. ["/authors/OL23919A"]
   cover_i?: number;
   first_publish_year?: number;
   subject?: string[];
@@ -15,7 +16,7 @@ export interface OLBook {
 export interface MBReleaseGroup {
   id: string;
   title: string;
-  "artist-credit": { artist: { name: string } }[];
+  "artist-credit": { artist: { id: string; name: string } }[];
   "first-release-date"?: string;
 }
 
@@ -166,7 +167,7 @@ export function MediaSearchInput({
 
       if (type === "book") {
         const res = await fetch(
-          `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=12&fields=key,title,author_name,cover_i,first_publish_year,subject`,
+          `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=12&fields=key,title,author_name,author_key,cover_i,first_publish_year,subject`,
           { signal }
         );
         const data: { docs: OLBook[] } = await res.json();

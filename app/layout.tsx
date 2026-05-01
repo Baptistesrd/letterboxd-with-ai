@@ -7,16 +7,16 @@ import "./reset.css";
 export const metadata: Metadata = {
   title: "Filmmaxxxing • Social film discovery",
   description: "Built from the Letterboxd clone by JanaIsCoding",
+  viewport: "width=device-width, initial-scale=1",
+  themeColor: "#000000",
+  icons: {
+    icon: "/favicon.ico", // Chemin corrigé ici
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <head>
-        <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#000000" />
-      </head>
       <body>
         <div id="root">
           <Suspense>{children}</Suspense>

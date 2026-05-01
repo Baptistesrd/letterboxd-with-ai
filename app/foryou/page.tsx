@@ -5,6 +5,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "app/firebase/firebase";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { LayoutNavbar } from "app/components/Navigation/LayoutNavbar";
 import { Footer } from "app/components/Navigation/Footer";
 import { UserReview, UserBook, UserAlbum } from "app/types";
@@ -42,6 +43,8 @@ interface ForyouFilm {
   poster_path?: string | null;
   vote_average?: number;
   genres?: string[];
+  director_name?: string;
+  director_id?: number;
 }
 
 interface ForyouBook {
@@ -51,6 +54,7 @@ interface ForyouBook {
   reason: string;
   ol_key: string;
   cover_url?: string;
+  author_ol_key?: string;   // e.g. "OL23919A"
 }
 
 interface ForyouAlbum {
@@ -61,6 +65,7 @@ interface ForyouAlbum {
   mbid: string;
   cover_url?: string;
   cover_failed?: boolean;
+  artist_mbid?: string;
 }
 
 interface ForyouResult {
@@ -277,6 +282,15 @@ const FilmCard = ({ rec, index }: { rec: ForyouFilm; index: number }) => (
           WHY YOU'LL LOVE IT
         </p>
         <p className="text-p-white text-xs leading-relaxed">{rec.reason}</p>
+        {rec.director_name && rec.director_id && (
+          <Link
+            href={`/director/${rec.director_id}`}
+            className="text-sh-grey hover:text-p-green mt-1.5 text-[10px] transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {rec.director_name}
+          </Link>
+        )}
       </div>
       {rec.vote_average && rec.vote_average > 0 && (
         <div className="absolute right-2 top-2 rounded-full bg-black/75 px-2 py-0.5 text-xs font-bold text-yellow-400 backdrop-blur-sm">
@@ -318,7 +332,17 @@ const BookCard = ({ rec, index }: { rec: ForyouBook; index: number }) => (
           WHY YOU'LL LOVE IT
         </p>
         <p className="text-p-white text-xs leading-relaxed">{rec.reason}</p>
-        <p className="text-sh-grey mt-1.5 text-[10px]">{rec.author}</p>
+        {rec.author_ol_key ? (
+          <Link
+            href={`/author/${rec.author_ol_key}`}
+            className="text-sh-grey hover:text-p-green mt-1.5 text-[10px] transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {rec.author}
+          </Link>
+        ) : (
+          <p className="text-sh-grey mt-1.5 text-[10px]">{rec.author}</p>
+        )}
       </div>
     </div>
     <div className="mt-2 px-0.5">
@@ -357,7 +381,17 @@ function AlbumCard({ rec, index }: { rec: ForyouAlbum; index: number }) {
             WHY YOU'LL LOVE IT
           </p>
           <p className="text-p-white text-xs leading-relaxed">{rec.reason}</p>
-          <p className="text-sh-grey mt-1.5 text-[10px]">{rec.artist}</p>
+          {rec.artist_mbid ? (
+            <Link
+              href={`/artist/${rec.artist_mbid}`}
+              className="text-sh-grey hover:text-p-green mt-1.5 text-[10px] transition-colors"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {rec.artist}
+            </Link>
+          ) : (
+            <p className="text-sh-grey mt-1.5 text-[10px]">{rec.artist}</p>
+          )}
         </div>
       </div>
       <div className="mt-2 px-0.5">
@@ -628,16 +662,20 @@ export default function ForyouPage() {
 
       const raw: ForyouResult = json.result;
 
-      // Enrich films with TMDB
+      // Enrich films with TMDB (+ credits for director)
       const enrichedFilms = await Promise.all(
         raw.films.map(async (rec) => {
           if (!rec.tmdb_id) return rec;
           try {
             const r = await fetch(
-              `https://api.themoviedb.org/3/movie/${rec.tmdb_id}?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY}`
+              `https://api.themoviedb.org/3/movie/${rec.tmdb_id}?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY}&append_to_response=credits`
             );
             const d = await r.json();
             if (d?.id && !d.status_code) {
+              const director = (d.credits?.crew ?? []).find(
+                (c: { job: string; id: number; name: string }) =>
+                  c.job === "Director"
+              );
               return {
                 ...rec,
                 title: d.title ?? rec.title,
@@ -645,6 +683,8 @@ export default function ForyouPage() {
                 poster_path: d.poster_path ?? null,
                 vote_average: d.vote_average ?? 0,
                 genres: (d.genres ?? []).map((g: { name: string }) => g.name),
+                director_name: director?.name,
+                director_id: director?.id,
               };
             }
           } catch {}
@@ -652,20 +692,51 @@ export default function ForyouPage() {
         })
       );
 
-      // Enrich books with Open Library covers
-      const enrichedBooks = raw.books.map((rec) => {
-        const olid = rec.ol_key?.replace("/works/", "");
-        return {
-          ...rec,
-          cover_url: olid ? OL_COVER(olid) : undefined,
-        };
-      });
+      // Enrich books with Open Library covers + author key
+      const enrichedBooks = await Promise.all(
+        raw.books.map(async (rec) => {
+          const olid = rec.ol_key?.replace("/works/", "");
+          let author_ol_key: string | undefined;
+          if (olid) {
+            try {
+              const r = await fetch(
+                `https://openlibrary.org/works/${olid}.json`
+              );
+              const d = await r.json();
+              const rawKey: string | undefined =
+                d.authors?.[0]?.author?.key;
+              if (rawKey) author_ol_key = rawKey.replace("/authors/", "");
+            } catch {}
+          }
+          return {
+            ...rec,
+            cover_url: olid ? OL_COVER(olid) : undefined,
+            author_ol_key,
+          };
+        })
+      );
 
-      // Enrich albums with CoverArt Archive
-      const enrichedAlbums = raw.albums.map((rec) => ({
-        ...rec,
-        cover_url: rec.mbid ? CAA_COVER(rec.mbid) : undefined,
-      }));
+      // Enrich albums with CoverArt Archive + artist MBID
+      const enrichedAlbums = await Promise.all(
+        raw.albums.map(async (rec) => {
+          let artist_mbid: string | undefined;
+          if (rec.mbid) {
+            try {
+              const r = await fetch(
+                `https://musicbrainz.org/ws/2/release-group/${rec.mbid}?inc=artists&fmt=json`,
+                { headers: { "User-Agent": "letterboxd-clone/1.0" } }
+              );
+              const d = await r.json();
+              artist_mbid = d["artist-credit"]?.[0]?.artist?.id;
+            } catch {}
+          }
+          return {
+            ...rec,
+            cover_url: rec.mbid ? CAA_COVER(rec.mbid) : undefined,
+            artist_mbid,
+          };
+        })
+      );
 
       const enriched: ForyouResult = {
         films: enrichedFilms,

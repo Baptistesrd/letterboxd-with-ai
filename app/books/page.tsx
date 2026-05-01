@@ -5,6 +5,7 @@ import { doc, getDoc, setDoc, arrayUnion } from "firebase/firestore";
 import { auth, db } from "app/firebase/firebase";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { LayoutNavbar } from "app/components/Navigation/LayoutNavbar";
 import { Footer } from "app/components/Navigation/Footer";
 import { UserBook } from "app/types";
@@ -102,6 +103,8 @@ export default function BooksPage() {
     if (!selectedBook || !uid || modalRating === 0) return;
     setSaving(true);
     try {
+      const rawAuthorKey = selectedBook.author_key?.[0]; // e.g. "/authors/OL23919A"
+      const authorKey = rawAuthorKey?.replace("/authors/", "") || undefined;
       const entry: UserBook = {
         bookKey: selectedBook.key,
         title: selectedBook.title,
@@ -110,6 +113,7 @@ export default function BooksPage() {
         rating: modalRating,
         review: modalReview.trim() || undefined,
         timestamp: new Date().toISOString(),
+        authorKey,
       };
       await setDoc(
         doc(db, "users", uid),
@@ -272,7 +276,17 @@ export default function BooksPage() {
                       <p className="text-p-white truncate text-xs font-bold leading-tight">
                         {book.title}
                       </p>
-                      <p className="text-sh-grey truncate text-xs">{book.author}</p>
+                      {book.authorKey ? (
+                        <Link
+                          href={`/author/${book.authorKey}`}
+                          className="text-sh-grey hover:text-p-green truncate text-xs transition-colors"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {book.author}
+                        </Link>
+                      ) : (
+                        <p className="text-sh-grey truncate text-xs">{book.author}</p>
+                      )}
                     </div>
                   </div>
                 ))}

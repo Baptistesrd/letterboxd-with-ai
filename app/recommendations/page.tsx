@@ -5,6 +5,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "app/firebase/firebase";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { LayoutNavbar } from "app/components/Navigation/LayoutNavbar";
 import { Footer } from "app/components/Navigation/Footer";
 import { UserReview } from "app/types";
@@ -34,6 +35,8 @@ interface Recommendation {
   overview?: string;
   vote_average?: number;
   genres?: string[];
+  director_name?: string;
+  director_id?: number;
 }
 
 interface TasteProfile {
@@ -44,20 +47,11 @@ interface TasteProfile {
   topDecades: { decade: string; count: number }[];
   avgRating: number;
   ratedCount: number;
-  lovedFilms: {
-    title: string;
-    year: string;
-    genres: string[];
-    director: string;
-    rating: number;
-  }[];
-  dislikedFilms: { title: string; year: string; genres: string[] }[];
 }
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
 const TMDB_POSTER = "https://image.tmdb.org/t/p/w500";
-const TMDB_IMG_SM = "https://image.tmdb.org/t/p/w185";
 const MOVIES_CACHE_KEY = (uid: string) => `recs_movies_v2_${uid}`;
 const RECS_CACHE_KEY = (uid: string) => `recs_results_v1_${uid}`;
 const BATCH_SIZE = 20;
@@ -70,15 +64,6 @@ const LOADING_MESSAGES = [
   "Consulting the critics...",
   "Curating your personal list...",
   "Almost ready...",
-];
-
-const CHART_COLORS = [
-  "#00e054",
-  "#40bcf4",
-  "#f59e0b",
-  "#c084fc",
-  "#f87171",
-  "#34d399",
 ];
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -102,11 +87,8 @@ function computeProfile(
   reviews: UserReview[],
   watchedIds: string[]
 ): TasteProfile {
-  const movieMap = Object.fromEntries(movies.map((m) => [m.id.toString(), m]));
   const ratedReviews = reviews.filter((r) => r.rating !== undefined && r.rating > 0);
-
   const genreNames = movies.flatMap((m) => m.genres.map((g) => g.name));
-
   const dirNames = movies.flatMap((m) =>
     m.credits.crew.filter((c) => c.job === "Director").map((c) => c.name)
   );
@@ -121,6 +103,7 @@ function computeProfile(
       }
     });
   });
+
   const topActors = Object.entries(actorMap)
     .sort(([, a], [, b]) => b - a)
     .slice(0, 5)
@@ -135,248 +118,68 @@ function computeProfile(
       ? ratedReviews.reduce((acc, r) => acc + (r.rating ?? 0), 0) / ratedReviews.length
       : 0;
 
-  const lovedFilms = [...ratedReviews]
-    .filter((r) => (r.rating ?? 0) >= 4)
-    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-    .slice(0, 15)
-    .map((r) => {
-      const m = movieMap[r.movieID];
-      const director =
-        m?.credits.crew.find((c) => c.job === "Director")?.name ?? "Unknown";
-      return {
-        title: m?.title ?? `Film #${r.movieID}`,
-        year: m?.release_date?.slice(0, 4) ?? "",
-        genres: m?.genres.map((g) => g.name) ?? [],
-        director,
-        rating: r.rating ?? 0,
-      };
-    });
-
-  const dislikedFilms = [...ratedReviews]
-    .filter((r) => (r.rating ?? 0) <= 2)
-    .sort((a, b) => (a.rating ?? 0) - (b.rating ?? 0))
-    .slice(0, 8)
-    .map((r) => {
-      const m = movieMap[r.movieID];
-      return {
-        title: m?.title ?? `Film #${r.movieID}`,
-        year: m?.release_date?.slice(0, 4) ?? "",
-        genres: m?.genres.map((g) => g.name) ?? [],
-      };
-    });
-
-  const decadeData = countBy(decadeNames).map(({ name, count }) => ({
-    decade: name,
-    count,
-  }));
-
   return {
     watchedCount: watchedIds.length,
     topGenres: countBy(genreNames).slice(0, 6),
     topDirectors: countBy(dirNames).slice(0, 5),
     topActors,
-    topDecades: decadeData.slice(0, 5),
+    topDecades: countBy(decadeNames).slice(0, 5).map(d => ({ decade: d.name, count: d.count })),
     avgRating,
     ratedCount: ratedReviews.length,
-    lovedFilms,
-    dislikedFilms,
   };
 }
 
-function buildPrompt(
-  profile: TasteProfile,
-  _watchedIds: string[],
-  seed: number
-): string {
-  const parts: string[] = [
-    `Films watched: ${profile.watchedCount}. Seed: ${seed}.`,
-    `Genres: ${profile.topGenres.slice(0, 5).map((g) => g.name).join(", ")}`,
-    `Directors: ${profile.topDirectors.slice(0, 5).map((d) => d.name).join(", ")}`,
-    `Actors: ${profile.topActors.slice(0, 5).map((a) => a.name).join(", ")}`,
-    `Decades: ${profile.topDecades.slice(0, 3).map((d) => d.decade).join(", ")}`,
-  ];
+function buildPrompt(profile: TasteProfile, seed: number): string {
+  return `Based on my taste:
+- Favorite Genres: ${profile.topGenres.map(g => g.name).join(", ")}
+- Top Directors: ${profile.topDirectors.map(d => d.name).join(", ")}
+- Preferred Eras: ${profile.topDecades.map(d => d.decade).join(", ")}
+- Average rating I give: ${profile.avgRating.toFixed(1)}/5
+- Randomness seed: ${seed}
 
-  if (profile.ratedCount > 0) {
-    parts.push(`Avg rating: ${profile.avgRating.toFixed(1)}/5`);
-  }
-
-  parts.push(
-    `Recommend 20 films I haven't seen. Return JSON only: [{"title":"...","year":2020,"reason":"...","tmdb_id":12345}]`
-  );
-
-  return parts.join("\n");
+Recommend 15 movies I haven't seen. 
+CRITICAL: Return ONLY a JSON object with a "recommendations" key.`;
 }
 
 // ─── INLINE COMPONENTS ────────────────────────────────────────────────────────
 
 const AIBadge = () => (
-  <span
-    className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold"
-    style={{
-      background: "rgba(168,85,247,0.15)",
-      border: "1px solid rgba(168,85,247,0.4)",
-      color: "#c084fc",
-    }}
-  >
-    ✦ Claude AI
+  <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ background: "rgba(0,224,84,0.15)", border: "1px solid rgba(0,224,84,0.4)", color: "#00e054" }}>
+    ✦ Groq AI
   </span>
 );
 
-const LoadingDots = () => (
-  <span className="inline-flex items-center gap-1.5">
-    {[0, 1, 2].map((i) => (
-      <span
-        key={i}
-        className="bg-p-green inline-block h-2 w-2 rounded-full"
-        style={{ animation: `dotPulse 1.4s ease-in-out ${i * 0.22}s infinite` }}
-      />
-    ))}
-  </span>
-);
-
-const MovieCard = ({
-  rec,
-  index,
-}: {
-  rec: Recommendation;
-  index: number;
-}) => (
-  <div
-    className="group cursor-default"
-    style={{
-      animation: "recsCardIn 0.45s ease both",
-      animationDelay: `${index * 35}ms`,
-    }}
-  >
-    {/* Poster */}
-    <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-c-grey">
+const MovieCard = ({ rec, index }: { rec: Recommendation; index: number }) => (
+  <div className="group cursor-default" style={{ animation: "recsCardIn 0.45s ease both", animationDelay: `${index * 35}ms` }}>
+    <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-[#1a1d23]">
       {rec.poster_path ? (
         <Image
           src={TMDB_POSTER + rec.poster_path}
           alt={rec.title}
           fill
           className="object-cover transition-transform duration-500 group-hover:scale-105"
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+          sizes="(max-width: 640px) 50vw, 20vw"
         />
       ) : (
-        <div className="flex h-full flex-col items-center justify-center gap-2 p-3 text-center">
-          <span className="text-sh-grey text-2xl">🎬</span>
-          <p className="text-sh-grey text-xs leading-tight">{rec.title}</p>
-        </div>
+        <div className="flex h-full flex-col items-center justify-center p-3 text-center text-gray-500">🎬</div>
       )}
-
-      {/* Hover overlay — shows Claude's reason */}
-      <div className="absolute inset-0 flex flex-col justify-end rounded-xl bg-black/90 p-3 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-        <p
-          className="text-sh-grey mb-1.5 text-[10px] font-bold tracking-widest"
-        >
-          WHY YOU'LL LOVE IT
-        </p>
-        <p className="text-p-white text-xs leading-relaxed">{rec.reason}</p>
-        {rec.genres && rec.genres.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {rec.genres.slice(0, 3).map((g, i) => (
-              <span
-                key={i}
-                className="rounded px-1.5 py-0.5 text-[10px] text-sh-grey"
-                style={{ background: "rgba(40,48,56,0.9)" }}
-              >
-                {g}
-              </span>
-            ))}
-          </div>
+      <div className="absolute inset-0 flex flex-col justify-end bg-black/90 p-3 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+        <p className="mb-1 text-[10px] font-bold tracking-widest text-gray-400">WHY YOU'LL LOVE IT</p>
+        <p className="text-xs leading-relaxed text-white">{rec.reason}</p>
+        {rec.director_name && rec.director_id && (
+          <Link
+            href={`/director/${rec.director_id}`}
+            className="mt-1.5 text-[10px] text-gray-400 hover:text-[#00e054] transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {rec.director_name}
+          </Link>
         )}
       </div>
-
-      {/* TMDB score badge */}
-      {rec.vote_average && rec.vote_average > 0 && (
-        <div className="absolute right-2 top-2 rounded-full bg-black/75 px-2 py-0.5 text-xs font-bold text-yellow-400 backdrop-blur-sm">
-          ★ {rec.vote_average.toFixed(1)}
-        </div>
-      )}
     </div>
-
-    {/* Title + year */}
     <div className="mt-2 px-0.5">
-      <p className="text-p-white truncate text-sm font-bold leading-tight">
-        {rec.title}
-      </p>
-      <p className="text-sh-grey text-xs">{rec.year}</p>
-    </div>
-  </div>
-);
-
-const ProfileCard = ({ profile }: { profile: TasteProfile }) => (
-  <div className="border-b-grey bg-drop-black rounded-xl border p-5 md:p-6">
-    <div className="mb-4 flex items-center justify-between">
-      <h2 className="text-sh-grey text-xs font-bold tracking-widest">
-        YOUR TASTE PROFILE
-      </h2>
-      <div className="flex items-center gap-3">
-        {profile.ratedCount > 0 && (
-          <span className="text-yellow-400 text-xs">
-            ★ {profile.avgRating.toFixed(1)} avg
-          </span>
-        )}
-        <span className="text-p-green text-xs font-bold">
-          {profile.watchedCount} films
-        </span>
-      </div>
-    </div>
-
-    {/* Genre pills */}
-    <div className="mb-4 flex flex-wrap gap-2">
-      {profile.topGenres.map((g, i) => (
-        <span
-          key={i}
-          className="rounded-full border px-3 py-1 text-xs font-bold transition-colors"
-          style={{
-            borderColor: i === 0 ? "#00e054" : "#456",
-            color: i === 0 ? "#00e054" : "#9ab",
-            background: i === 0 ? "rgba(0,224,84,0.08)" : "transparent",
-          }}
-        >
-          {g.name}
-          <span className="ml-1 opacity-50">{g.count}</span>
-        </span>
-      ))}
-    </div>
-
-    {/* Director + decade row */}
-    <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 md:grid-cols-3">
-      <div>
-        <p className="text-sh-grey mb-0.5 text-[10px] font-bold tracking-wider opacity-60">
-          TOP DIRECTORS
-        </p>
-        <p className="text-p-white truncate">
-          {profile.topDirectors
-            .slice(0, 3)
-            .map((d) => d.name)
-            .join(" · ")}
-        </p>
-      </div>
-      <div>
-        <p className="text-sh-grey mb-0.5 text-[10px] font-bold tracking-wider opacity-60">
-          TOP ACTORS
-        </p>
-        <p className="text-p-white truncate">
-          {profile.topActors
-            .slice(0, 3)
-            .map((a) => a.name)
-            .join(" · ")}
-        </p>
-      </div>
-      <div>
-        <p className="text-sh-grey mb-0.5 text-[10px] font-bold tracking-wider opacity-60">
-          FAVORITE DECADES
-        </p>
-        <p className="text-p-white">
-          {profile.topDecades
-            .slice(0, 3)
-            .map((d) => d.decade)
-            .join(" · ")}
-        </p>
-      </div>
+      <p className="truncate text-sm font-bold text-white">{rec.title}</p>
+      <p className="text-xs text-gray-400">{rec.year}</p>
     </div>
   </div>
 );
@@ -385,135 +188,60 @@ const ProfileCard = ({ profile }: { profile: TasteProfile }) => (
 
 export default function RecommendationsPage() {
   const router = useRouter();
-
   const [ready, setReady] = useState(false);
   const [uid, setUid] = useState<string | null>(null);
-
   const [profile, setProfile] = useState<TasteProfile | null>(null);
   const [watchedIds, setWatchedIds] = useState<string[]>([]);
   const [loadingData, setLoadingData] = useState(true);
-  const [dataProgress, setDataProgress] = useState({ fetched: 0, total: 0 });
-
   const [generating, setGenerating] = useState(false);
-  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
-
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Cycle loading messages while generating
-  useEffect(() => {
-    if (!generating) return;
-    const iv = setInterval(
-      () => setLoadingMsgIdx((p) => (p + 1) % LOADING_MESSAGES.length),
-      1800
-    );
-    return () => clearInterval(iv);
-  }, [generating]);
-
-  // Auth guard + initial data load
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        router.push("/");
-        return;
-      }
-      setReady(true);
+      if (!user) { router.push("/"); return; }
       setUid(user.uid);
+      setReady(true);
       loadUserData(user.uid);
     });
     return () => unsub();
-  }, []);
+  }, [router]);
 
   const loadUserData = async (userId: string) => {
-    const cacheKey = MOVIES_CACHE_KEY(userId);
-    try {
-      const cached = sessionStorage.getItem(cacheKey);
-      if (cached) {
-        const { movies, reviews, ids } = JSON.parse(cached);
-        setProfile(computeProfile(movies, reviews, ids));
-        setWatchedIds(ids);
-        setLoadingData(false);
-        return;
-      }
-    } catch {}
-
     try {
       const snap = await getDoc(doc(db, "users", userId));
-      if (!snap.exists()) {
-        setLoadingData(false);
-        return;
-      }
+      if (!snap.exists()) { setLoadingData(false); return; }
+
       const data = snap.data();
       const userReviews: UserReview[] = data.reviews ?? [];
       const ids: string[] = (data.watched ?? []).map((w: any) => w.movieID);
-      const reviewIds = userReviews.map((r) => r.movieID);
-      const allIds = [...new Set([...ids, ...reviewIds])];
-
-      setDataProgress({ fetched: 0, total: allIds.length });
+      const allIds = [...new Set([...ids, ...userReviews.map(r => r.movieID)])];
 
       const fetched: TMDBDetail[] = [];
-      for (let i = 0; i < allIds.length; i += BATCH_SIZE) {
-        const batch = allIds.slice(i, i + BATCH_SIZE);
-        const results = await Promise.all(
-          batch.map((id) =>
-            fetch(
-              `https://api.themoviedb.org/3/movie/${id}?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY}&append_to_response=credits`
-            )
-              .then((r) => r.json())
-              .catch(() => null)
-          )
-        );
-        results.forEach((m) => {
-          if (m && m.id && !m.status_code) fetched.push(m as TMDBDetail);
-        });
-        setDataProgress((p) => ({
-          fetched: Math.min(i + BATCH_SIZE, allIds.length),
-          total: p.total,
-        }));
-      }
+      const batch = allIds.slice(0, 40); // Analyse des 40 derniers films pour le profil
 
-      const p = computeProfile(fetched, userReviews, ids);
-      setProfile(p);
+      const results = await Promise.all(
+        batch.map(id => fetch(`https://api.themoviedb.org/3/movie/${id}?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY}&append_to_response=credits`).then(r => r.json()))
+      );
+
+      results.forEach(m => { if (m && m.id) fetched.push(m); });
+      setProfile(computeProfile(fetched, userReviews, ids));
       setWatchedIds(ids);
-
-      try {
-        sessionStorage.setItem(
-          cacheKey,
-          JSON.stringify({ movies: fetched, reviews: userReviews, ids })
-        );
-      } catch {}
     } catch (err) {
-      console.error("loadUserData error:", err);
+      console.error(err);
     } finally {
       setLoadingData(false);
     }
   };
 
-  const generateRecommendations = async (forceFresh = false) => {
+  const generateRecommendations = async () => {
     if (!profile || !uid) return;
-
-    const cacheKey = RECS_CACHE_KEY(uid);
-
-    if (!forceFresh) {
-      try {
-        const cached = sessionStorage.getItem(cacheKey);
-        if (cached) {
-          setRecommendations(JSON.parse(cached));
-          return;
-        }
-      } catch {}
-    } else {
-      try { sessionStorage.removeItem(cacheKey); } catch {}
-    }
-
     setGenerating(true);
     setError(null);
-    setRecommendations([]);
-
-    const seed = Math.floor(Math.random() * 99999);
 
     try {
-      const prompt = buildPrompt(profile, watchedIds, seed);
+      const seed = Math.floor(Math.random() * 9999);
+      const prompt = buildPrompt(profile, seed);
 
       const res = await fetch("/api/recommendations", {
         method: "POST",
@@ -522,268 +250,87 @@ export default function RecommendationsPage() {
       });
 
       const json = await res.json();
-      if (!res.ok || json.error) {
-        throw new Error(json.error ?? "API error");
-      }
+      if (!res.ok) throw new Error(json.error || "Failed to fetch");
 
-      const rawRecs: Recommendation[] = json.recommendations ?? [];
+      const rawRecs: Recommendation[] = json.recommendations || [];
 
-      // Enrich each rec with TMDB details
       const enriched = await Promise.all(
         rawRecs.map(async (rec) => {
-          if (!rec.tmdb_id) return rec;
           try {
             const r = await fetch(
-              `https://api.themoviedb.org/3/movie/${rec.tmdb_id}?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY}`
+              `https://api.themoviedb.org/3/movie/${rec.tmdb_id}?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY}&append_to_response=credits`
             );
             const d = await r.json();
-            if (d?.id && !d.status_code) {
-              return {
-                ...rec,
-                title: d.title ?? rec.title,
-                year: parseInt(d.release_date?.slice(0, 4) ?? String(rec.year)),
-                poster_path: d.poster_path ?? null,
-                overview: d.overview ?? "",
-                vote_average: d.vote_average ?? 0,
-                genres: (d.genres ?? []).map((g: any) => g.name),
-              };
-            }
-          } catch {}
-          return rec;
+            const director = (d.credits?.crew ?? []).find(
+              (c: { job: string; id: number; name: string }) => c.job === "Director"
+            );
+            return {
+              ...rec,
+              poster_path: d.poster_path,
+              year: d.release_date?.slice(0, 4) || rec.year,
+              director_name: director?.name,
+              director_id: director?.id,
+            };
+          } catch { return rec; }
         })
       );
 
       setRecommendations(enriched);
-      try {
-        sessionStorage.setItem(cacheKey, JSON.stringify(enriched));
-      } catch {}
     } catch (err: any) {
-      console.error("generateRecommendations error:", err);
-      setError(err.message ?? "Failed to generate recommendations. Please try again.");
+      setError("AI is resting. Please try again in a moment.");
     } finally {
       setGenerating(false);
     }
   };
 
-  // ── Loading data phase ─────────────────────────────────────────────────────
-
-  if (!ready || loadingData) {
-    return (
-      <>
-        <LayoutNavbar />
-        <main className="bg-h-blue flex min-h-screen flex-col items-center justify-center px-4">
-          <div className="w-full max-w-xs text-center">
-            <p
-              className="text-p-green mb-2 text-4xl font-bold tracking-widest"
-              style={{ textShadow: "0 0 30px rgba(0,224,84,0.3)" }}
-            >
-              AI PICKS
-            </p>
-            <p className="text-sh-grey mb-6 text-sm">
-              Loading your film diary…
-            </p>
-            <div className="bg-c-grey h-1.5 w-full overflow-hidden rounded-full">
-              <div
-                className="bg-p-green h-full rounded-full transition-all duration-300"
-                style={{
-                  width:
-                    dataProgress.total > 0
-                      ? `${Math.round(
-                          (dataProgress.fetched / dataProgress.total) * 100
-                        )}%`
-                      : "25%",
-                  animation:
-                    dataProgress.total === 0 ? "shimmerBar 1.5s ease-in-out infinite" : "none",
-                }}
-              />
-            </div>
-            {dataProgress.total > 0 && (
-              <p className="text-sh-grey mt-2 text-xs">
-                {dataProgress.fetched} / {dataProgress.total} films
-              </p>
-            )}
-          </div>
-        </main>
-      </>
-    );
-  }
-
-  if (!profile || profile.watchedCount === 0) {
-    return (
-      <>
-        <LayoutNavbar />
-        <main className="bg-h-blue flex min-h-screen flex-col items-center justify-center px-4 text-center">
-          <p
-            className="text-p-green mb-3 text-4xl font-bold tracking-widest"
-            style={{ textShadow: "0 0 30px rgba(0,224,84,0.3)" }}
-          >
-            AI PICKS
-          </p>
-          <p className="text-sh-grey max-w-sm text-sm">
-            Add films to your watched list and rate them to get personalized AI
-            recommendations.
-          </p>
-        </main>
-        <Footer />
-      </>
-    );
-  }
-
-  // ── Main view ─────────────────────────────────────────────────────────────
+  if (!ready || loadingData) return <div className="flex h-screen items-center justify-center bg-[#050a0f] text-[#00e054]">Analyzing Diary...</div>;
 
   return (
     <>
       <style>{`
-        @keyframes recsCardIn {
-          from { opacity: 0; transform: translateY(20px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes dotPulse {
-          0%, 100% { opacity: 0.25; transform: scale(0.75); }
-          50%       { opacity: 1;    transform: scale(1.1);  }
-        }
-        @keyframes shimmerBar {
-          0%   { width: 15%; }
-          50%  { width: 60%; }
-          100% { width: 15%; }
-        }
-        @keyframes fadeMsg {
-          from { opacity: 0; transform: translateY(6px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes recsCardIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
-
       <LayoutNavbar />
-
-      <main className="bg-h-blue min-h-screen px-4 pb-20 pt-10">
+      <main className="min-h-screen bg-[#050a0f] px-4 pb-20 pt-10 text-white">
         <div className="mx-auto max-w-5xl">
-
-          {/* ── Header ─────────────────────────────────────────────────── */}
-          <div className="mb-8 text-center">
-            <div className="mb-2 flex flex-wrap items-center justify-center gap-3">
-              <h1
-                className="text-p-green text-5xl font-bold tracking-widest md:text-6xl"
-                style={{ textShadow: "0 0 50px rgba(0,224,84,0.25)" }}
-              >
-                AI PICKS
-              </h1>
+          <div className="mb-12 text-center">
+            <div className="mb-3 flex items-center justify-center gap-4">
+              <h1 className="text-5xl font-black tracking-tighter text-[#00e054] md:text-6xl">AI PICKS</h1>
               <AIBadge />
             </div>
-            <p className="text-sh-grey text-sm">
-              Personalized recommendations powered by Claude
-            </p>
+            <p className="text-gray-400">Discover your next favorite film based on your history.</p>
           </div>
 
-          {/* ── Taste profile ──────────────────────────────────────────── */}
-          <div
-            className="mb-6"
-            style={{ animation: "recsCardIn 0.4s ease both" }}
-          >
-            <ProfileCard profile={profile} />
-          </div>
-
-          {/* ── Generate button (before first generation) ──────────────── */}
-          {!generating && recommendations.length === 0 && !error && (
-            <div
-              className="mb-10 text-center"
-              style={{ animation: "recsCardIn 0.4s ease 0.1s both" }}
-            >
+          {!generating && recommendations.length === 0 && (
+            <div className="flex flex-col items-center gap-6">
               <button
-                onClick={() => generateRecommendations(false)}
-                className="bg-p-green hover:bg-b-green text-h-blue rounded-xl px-10 py-3.5 text-sm font-bold tracking-widest shadow-lg transition-colors"
-                style={{ boxShadow: "0 0 30px rgba(0,224,84,0.2)" }}
+                onClick={generateRecommendations}
+                className="rounded-xl bg-[#00e054] px-10 py-4 text-sm font-bold tracking-widest text-black transition-transform hover:scale-105 active:scale-95"
               >
                 GENERATE RECOMMENDATIONS
               </button>
-              <p className="text-sh-grey mt-3 text-xs">
-                Claude will analyze your{" "}
-                <span className="text-p-white">{profile.watchedCount} films</span> and{" "}
-                {profile.ratedCount > 0 ? (
-                  <>
-                    <span className="text-p-white">{profile.ratedCount} ratings</span>
-                  </>
-                ) : (
-                  "viewing history"
-                )}{" "}
-                to find your perfect next watch.
-              </p>
+              {profile && <p className="text-xs text-gray-500">Analyzed {profile.watchedCount} films from your library.</p>}
             </div>
           )}
 
-          {/* ── Generating state ───────────────────────────────────────── */}
           {generating && (
-            <div className="mb-12 flex flex-col items-center gap-5">
-              <LoadingDots />
-              <p
-                key={loadingMsgIdx}
-                className="text-sh-grey text-sm"
-                style={{ animation: "fadeMsg 0.35s ease both" }}
-              >
-                {LOADING_MESSAGES[loadingMsgIdx]}
-              </p>
+            <div className="py-20 text-center">
+              <div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-[#00e054] border-t-transparent"></div>
+              <p className="animate-pulse text-gray-400">Claude is thinking...</p>
             </div>
           )}
 
-          {/* ── Error ─────────────────────────────────────────────────── */}
-          {error && (
-            <div
-              className="mb-8 flex flex-col items-center gap-3"
-              style={{ animation: "recsCardIn 0.3s ease both" }}
-            >
-              <div className="border-b-grey bg-drop-black rounded-xl border px-6 py-4 text-center">
-                <p className="text-red-400 mb-3 text-sm">{error}</p>
-                <button
-                  onClick={() => generateRecommendations(true)}
-                  className="border-b-grey text-sh-grey hover:text-p-white rounded-lg border px-6 py-2 text-xs transition-colors"
-                >
-                  ↺ Try Again
-                </button>
-              </div>
-            </div>
-          )}
+          {error && <div className="text-center text-red-400 mb-8">{error}</div>}
 
-          {/* ── Results grid ──────────────────────────────────────────── */}
           {recommendations.length > 0 && (
-            <>
-              {/* Toolbar */}
-              <div
-                className="mb-5 flex items-center justify-between"
-                style={{ animation: "recsCardIn 0.35s ease both" }}
-              >
-                <p className="text-sh-grey text-xs font-bold tracking-widest">
-                  {recommendations.length} PICKS FOR YOU
-                </p>
-                <button
-                  onClick={() => generateRecommendations(true)}
-                  disabled={generating}
-                  className="border-b-grey text-sh-grey hover:text-p-white flex items-center gap-1.5 rounded-lg border px-4 py-1.5 text-xs transition-colors disabled:pointer-events-none disabled:opacity-40"
-                >
-                  ↺ <span>Regenerate</span>
-                </button>
-              </div>
-
-              {/* Movie grid */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {recommendations.map((rec, i) => (
-                  <MovieCard key={`${rec.tmdb_id}-${i}`} rec={rec} index={i} />
-                ))}
-              </div>
-
-              {/* Bottom CTA */}
-              <div className="mt-10 text-center">
-                <button
-                  onClick={() => generateRecommendations(true)}
-                  disabled={generating}
-                  className="border-b-grey text-sh-grey hover:text-p-white rounded-xl border px-8 py-3 text-sm transition-colors disabled:opacity-40"
-                >
-                  ↺ Get Fresh Recommendations
-                </button>
-              </div>
-            </>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
+              {recommendations.map((rec, i) => (
+                <MovieCard key={i} rec={rec} index={i} />
+              ))}
+            </div>
           )}
         </div>
       </main>
-
       <Footer />
     </>
   );

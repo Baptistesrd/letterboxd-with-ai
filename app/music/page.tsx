@@ -4,6 +4,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, setDoc, arrayUnion } from "firebase/firestore";
 import { auth, db } from "app/firebase/firebase";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { LayoutNavbar } from "app/components/Navigation/LayoutNavbar";
 import { Footer } from "app/components/Navigation/Footer";
 import { UserAlbum } from "app/types";
@@ -141,6 +142,8 @@ export default function MusicPage() {
     if (!selectedAlbum || !uid || modalRating === 0) return;
     setSaving(true);
     try {
+      const artistMbid =
+        selectedAlbum["artist-credit"]?.[0]?.artist?.id || undefined;
       const entry: UserAlbum = {
         mbid: selectedAlbum.id,
         title: selectedAlbum.title,
@@ -149,6 +152,7 @@ export default function MusicPage() {
         rating: modalRating,
         review: modalReview.trim() || undefined,
         timestamp: new Date().toISOString(),
+        artistMbid,
       };
       await setDoc(
         doc(db, "users", uid),
@@ -295,7 +299,17 @@ export default function MusicPage() {
                       <p className="text-p-white truncate text-xs font-bold leading-tight">
                         {album.title}
                       </p>
-                      <p className="text-sh-grey truncate text-xs">{album.artist}</p>
+                      {album.artistMbid ? (
+                        <Link
+                          href={`/artist/${album.artistMbid}`}
+                          className="text-sh-grey hover:text-p-green truncate text-xs transition-colors"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {album.artist}
+                        </Link>
+                      ) : (
+                        <p className="text-sh-grey truncate text-xs">{album.artist}</p>
+                      )}
                     </div>
                   </div>
                 ))}

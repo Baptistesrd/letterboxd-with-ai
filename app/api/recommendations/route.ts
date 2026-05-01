@@ -1,99 +1,52 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => null);
-
-  if (!body?.prompt) {
-    return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
-  }
-
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) {
-    return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
-  }
-
+export async function POST(req: Request) {
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `You are a world-class film critic and recommendation engine.
-Analyze the user's viewing patterns and ratings to recommend films they haven't seen yet.
-Return ONLY a valid JSON array — no markdown, no explanation, no code blocks.
-Format: [{"title": string, "year": number, "reason": string, "tmdb_id": number}]
-The "reason" must be 1-2 sentences explaining why THIS specific viewer would love this film based on their unique taste profile.
-Include both acclaimed classics and hidden gems. Prioritize variety across genres and decades.
+    const { prompt } = await req.json();
 
-${body.prompt}`,
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            maxOutputTokens: 1500,
-          },
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("Gemini API error:", response.status, text);
-      return NextResponse.json(
-        { error: `AI service error (${response.status})` },
-        { status: 502 }
-      );
+    if (!prompt) {
+      return NextResponse.json({ error: "Le prompt est vide" }, { status: 400 });
     }
+
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        // Utilisation d'un modèle stable et rapide
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          {
+            role: "system",
+            content: "Tu es un moteur de recommandation de films. Tu dois répondre EXCLUSIVEMENT avec un objet JSON valide. Ne pas ajouter de texte avant ou après le JSON. Format : {\"recommendations\": [{\"title\":\"...\", \"year\":2020, \"reason\":\"...\", \"tmdb_id\":123}]}"
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        // On force la réponse en format JSON
+        response_format: { type: "json_object" }
+      }),
+    });
 
     const data = await response.json();
 
-    if (data.promptFeedback?.blockReason) {
-      console.error("Gemini blocked prompt:", data.promptFeedback.blockReason);
-      return NextResponse.json(
-        { error: "Request blocked by AI safety filters." },
-        { status: 400 }
-      );
+    if (!response.ok) {
+      console.error("Groq API Error:", data);
+      return NextResponse.json({ error: data.error?.message || "Erreur Groq" }, { status: response.status });
     }
 
-    const rawText: string =
-      data.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
+    // On extrait le contenu texte de la réponse de l'IA
+    const content = data.choices[0]?.message?.content;
+    const parsedContent = JSON.parse(content);
 
-    // Strip accidental markdown code fences
-    const cleaned = rawText
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-
-    let recommendations;
-    try {
-      recommendations = JSON.parse(cleaned);
-    } catch {
-      console.error("Failed to parse Gemini response:", cleaned);
-      return NextResponse.json(
-        { error: "AI returned invalid JSON. Please try again." },
-        { status: 500 }
-      );
-    }
-
-    if (!Array.isArray(recommendations)) {
-      return NextResponse.json(
-        { error: "AI did not return a valid list. Please try again." },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ recommendations });
-  } catch (err) {
-    console.error("Recommendations route error:", err);
-    return NextResponse.json(
-      { error: "Failed to generate recommendations. Please try again." },
-      { status: 500 }
-    );
+    return NextResponse.json(parsedContent);
+  } catch (error: any) {
+    console.error("Server Route Error:", error);
+    return NextResponse.json({ error: "Erreur interne du serveur" }, { status: 500 });
   }
 }

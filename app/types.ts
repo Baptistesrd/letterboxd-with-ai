@@ -48,14 +48,16 @@ export interface UserBook {
   rating?: number;       // 1-5
   review?: string;
   timestamp?: string;
+  authorKey?: string;    // Open Library author key e.g. "OL23919A"
 }
 
 export interface UserAlbum {
-  mbid: string;          // MusicBrainz ID
+  mbid: string;          // MusicBrainz release-group ID
   title: string;
   artist: string;
   cover_url?: string;
   rating?: number;       // 1-5
   review?: string;
   timestamp?: string;
+  artistMbid?: string;   // MusicBrainz artist ID
 }
