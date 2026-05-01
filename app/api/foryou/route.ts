@@ -7,8 +7,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
   }
 
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
+  }
+
   try {
-    const geminiKey = process.env.GEMINI_API_KEY;
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
       {
@@ -44,6 +48,15 @@ ${body.prompt}`,
     }
 
     const data = await response.json();
+
+    if (data.promptFeedback?.blockReason) {
+      console.error("Gemini blocked prompt:", data.promptFeedback.blockReason);
+      return NextResponse.json(
+        { error: "Request blocked by AI safety filters." },
+        { status: 400 }
+      );
+    }
+
     const rawText: string =
       data.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
 
@@ -52,10 +65,27 @@ ${body.prompt}`,
       .replace(/\s*```$/i, "")
       .trim();
 
-    const result = JSON.parse(cleaned);
+    let result;
+    try {
+      result = JSON.parse(cleaned);
+    } catch {
+      console.error("Failed to parse Gemini response:", cleaned);
+      return NextResponse.json(
+        { error: "AI returned invalid JSON. Please try again." },
+        { status: 500 }
+      );
+    }
 
-    if (!Array.isArray(result.films) || !Array.isArray(result.books) || !Array.isArray(result.albums)) {
-      throw new Error("Invalid response structure from AI");
+    if (
+      !Array.isArray(result.films) ||
+      !Array.isArray(result.books) ||
+      !Array.isArray(result.albums)
+    ) {
+      console.error("Invalid structure from Gemini:", result);
+      return NextResponse.json(
+        { error: "AI returned unexpected structure. Please try again." },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ result });

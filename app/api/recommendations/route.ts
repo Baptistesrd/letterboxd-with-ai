@@ -7,15 +7,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
   }
 
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
+  }
+
   try {
-    const geminiKey = process.env.GEMINI_API_KEY;
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [
             {
@@ -34,7 +36,7 @@ ${body.prompt}`,
             },
           ],
           generationConfig: {
-            maxOutputTokens: 1000,
+            maxOutputTokens: 1500,
           },
         }),
       }
@@ -50,19 +52,40 @@ ${body.prompt}`,
     }
 
     const data = await response.json();
+
+    if (data.promptFeedback?.blockReason) {
+      console.error("Gemini blocked prompt:", data.promptFeedback.blockReason);
+      return NextResponse.json(
+        { error: "Request blocked by AI safety filters." },
+        { status: 400 }
+      );
+    }
+
     const rawText: string =
       data.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
 
-    // Strip any accidental markdown code fences Claude might add
+    // Strip accidental markdown code fences
     const cleaned = rawText
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```$/i, "")
       .trim();
 
-    const recommendations = JSON.parse(cleaned);
+    let recommendations;
+    try {
+      recommendations = JSON.parse(cleaned);
+    } catch {
+      console.error("Failed to parse Gemini response:", cleaned);
+      return NextResponse.json(
+        { error: "AI returned invalid JSON. Please try again." },
+        { status: 500 }
+      );
+    }
 
     if (!Array.isArray(recommendations)) {
-      throw new Error("Claude did not return an array");
+      return NextResponse.json(
+        { error: "AI did not return a valid list. Please try again." },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ recommendations });
