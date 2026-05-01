@@ -1,4 +1,4 @@
-import { Metadata } from "next";
+import { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/react";
 import React, { Suspense } from "react";
 import "./globals.css";
@@ -7,11 +7,15 @@ import "./reset.css";
 export const metadata: Metadata = {
   title: "Filmmaxxxing • Social film discovery",
   description: "Built from the Letterboxd clone by JanaIsCoding",
-  viewport: "width=device-width, initial-scale=1",
-  themeColor: "#000000",
   icons: {
-    icon: "/favicon.ico", // Chemin corrigé ici
+    icon: "/favicon.ico",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#000000",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

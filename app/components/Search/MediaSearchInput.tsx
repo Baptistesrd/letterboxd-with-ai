@@ -285,7 +285,7 @@ export function MediaSearchInput({
         }
       `}</style>
 
-      <div ref={containerRef} className="relative">
+      <div ref={containerRef} className="relative z-[100]">
         {/* ── Input ─────────────────────────────────────────────────────── */}
         <div className="relative">
           <input
