@@ -130,15 +130,14 @@ function computeProfile(
 }
 
 function buildPrompt(profile: TasteProfile, seed: number): string {
-  return `Based on my taste:
+  return `My taste profile (seed: ${seed}):
 - Favorite Genres: ${profile.topGenres.map(g => g.name).join(", ")}
-- Top Directors: ${profile.topDirectors.map(d => d.name).join(", ")}
+- Top Directors I love: ${profile.topDirectors.map(d => d.name).join(", ")}
 - Preferred Eras: ${profile.topDecades.map(d => d.decade).join(", ")}
-- Average rating I give: ${profile.avgRating.toFixed(1)}/5
-- Randomness seed: ${seed}
+- Average rating I give: ${profile.avgRating.toFixed(1)}/5 (${profile.ratedCount} films rated)
 
-Recommend 15 movies I haven't seen. 
-CRITICAL: Return ONLY a JSON object with a "recommendations" key.`;
+Recommend 15 films I have NOT seen yet. Vary your picks across eras and countries — surprise me.
+Return JSON object: {"recommendations": [...]}`;
 }
 
 // ─── INLINE COMPONENTS ────────────────────────────────────────────────────────
@@ -246,7 +245,7 @@ export default function RecommendationsPage() {
       const res = await fetch("/api/recommendations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, watchedIds }),
       });
 
       const json = await res.json();
@@ -275,7 +274,8 @@ export default function RecommendationsPage() {
         })
       );
 
-      setRecommendations(enriched);
+      const safe = enriched.filter(rec => !watchedIds.includes(String(rec.tmdb_id)));
+      setRecommendations(safe);
     } catch (err: any) {
       setError("AI is resting. Please try again in a moment.");
     } finally {
