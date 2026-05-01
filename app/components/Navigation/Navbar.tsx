@@ -22,26 +22,6 @@ const menuLinks = [
     name: "FILMS",
     href: "/films",
   },
-  // {
-  //   id: 2,
-  //   name: "LISTS",
-  //   href: "/lists",
-  // },
-  {
-    id: 4,
-    name: "REVIEWS",
-    href: "/reviews",
-  },
-  {
-    id: 5,
-    name: "STATS",
-    href: "/stats",
-  },
-  {
-    id: 6,
-    name: "AI PICKS",
-    href: "/recommendations",
-  },
   {
     id: 7,
     name: "BOOKS",
@@ -51,6 +31,20 @@ const menuLinks = [
     id: 8,
     name: "MUSIC",
     href: "/music",
+  },
+  // {
+  //   id: 2,
+  //   name: "LISTS",
+  //   href: "/lists",
+  {
+    id: 5,
+    name: "STATS",
+    href: "/stats",
+  },
+  {
+    id: 6,
+    name: "AI PICKS",
+    href: "/recommendations",
   },
   {
     id: 9,

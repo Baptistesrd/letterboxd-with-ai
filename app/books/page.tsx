@@ -97,17 +97,24 @@ export default function BooksPage() {
     try {
       const rawAuthorKey = selectedBook.author_key?.[0];
       const authorKey = rawAuthorKey?.replace("/authors/", "") || undefined;
+
+      // Build entry without undefined fields — Firebase arrayUnion rejects them
       const entry: UserBook = {
         bookKey: selectedBook.key,
         title: selectedBook.title,
         author: selectedBook.author_name?.[0] ?? "Unknown",
-        cover_id: selectedBook.cover_i,
         rating: modalRating,
-        review: modalReview.trim() || undefined,
         timestamp: new Date().toISOString(),
-        authorKey,
+        ...(selectedBook.cover_i !== undefined && { cover_id: selectedBook.cover_i }),
+        ...(modalReview.trim() && { review: modalReview.trim() }),
+        ...(authorKey && { authorKey }),
       };
-      await setDoc(doc(db, "users", uid), { books: arrayUnion(entry) }, { merge: true });
+
+      await setDoc(
+        doc(db, "users", uid),
+        { books: arrayUnion(entry) },
+        { merge: true }
+      );
       setLoggedBooks((prev) => [...prev, entry]);
       closeModal();
     } catch (err) {
