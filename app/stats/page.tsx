@@ -21,7 +21,7 @@ import {
 } from "recharts";
 import { LayoutNavbar } from "app/components/Navigation/LayoutNavbar";
 import { Footer } from "app/components/Navigation/Footer";
-import { UserReview } from "app/types";
+import { UserReview, UserBook, UserAlbum } from "app/types";
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ const CHART_COLORS = [
 ];
 const TMDB_IMG = "https://image.tmdb.org/t/p/w185";
 const TMDB_POSTER = "https://image.tmdb.org/t/p/w200";
-const CACHE_KEY = (uid: string) => `stats_v1_${uid}`;
+const CACHE_KEY = (uid: string) => `stats_v2_${uid}`;
 const BATCH_SIZE = 20;
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -110,6 +110,16 @@ function parseTimestamp(ts: string): Date | null {
   const [d, m, y] = parts.map(Number);
   if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
   return new Date(y, m - 1, d);
+}
+
+function isoYear(ts?: string): string | null {
+  if (!ts) return null;
+  try {
+    const y = new Date(ts).getFullYear();
+    return isNaN(y) ? null : y.toString();
+  } catch {
+    return null;
+  }
 }
 
 // ─── STAR DISPLAY ─────────────────────────────────────────────────────────────
@@ -820,6 +830,610 @@ const CreatorSection = ({ movies }: { movies: TMDBMovie[] }) => {
   );
 };
 
+// ─── TAB SKELETON ─────────────────────────────────────────────────────────────
+
+const TabSkeleton = () => (
+  <div className="flex flex-col gap-5 py-4">
+    {([180, 260, 160] as const).map((h, i) => (
+      <div
+        key={i}
+        className="border-b-grey bg-drop-black rounded-xl border p-5"
+        style={{ animation: "statsCardIn 0.5s ease both", animationDelay: `${i * 80}ms` }}
+      >
+        <div className="mb-4 h-3 w-28 animate-pulse rounded bg-c-grey" />
+        <div className="animate-pulse rounded-lg bg-c-grey" style={{ height: h }} />
+      </div>
+    ))}
+  </div>
+);
+
+// ─── ALBUM COVER (404-safe) ───────────────────────────────────────────────────
+
+function AlbumCoverImg({
+  url,
+  title,
+}: {
+  url?: string;
+  title: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (!url || failed) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-3 text-center">
+        <span className="text-sh-grey text-2xl">🎵</span>
+        <p className="text-sh-grey text-xs leading-tight">{title}</p>
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={title}
+      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+// ─── BOOKS TAB ────────────────────────────────────────────────────────────────
+
+const BooksTab = ({
+  books,
+  ready,
+}: {
+  books: UserBook[];
+  ready: boolean;
+}) => {
+  if (!ready) return <TabSkeleton />;
+
+  if (books.length === 0) {
+    return (
+      <div className="py-20 text-center">
+        <p className="text-sh-grey mb-3 text-sm">No books logged yet.</p>
+        <Link
+          href="/books"
+          className="text-p-green text-sm font-bold tracking-widest hover:underline"
+        >
+          HEAD TO /BOOKS TO START TRACKING →
+        </Link>
+      </div>
+    );
+  }
+
+  const rated = books.filter((b) => b.rating && b.rating > 0);
+  const avgRating =
+    rated.length
+      ? rated.reduce((a, b) => a + (b.rating ?? 0), 0) / rated.length
+      : 0;
+  const uniqueAuthors = countBy(books.map((b) => b.author));
+  const authorChartData = uniqueAuthors.slice(0, 6);
+  const topAuthors = uniqueAuthors.slice(0, 3);
+
+  const ratingDist = [1, 2, 3, 4, 5].map((r) => ({
+    rating: r.toString(),
+    count: rated.filter((b) => b.rating === r).length,
+  }));
+
+  const yearCounts: Record<string, number> = {};
+  books.forEach((b) => {
+    const y = isoYear(b.timestamp);
+    if (!y) return;
+    yearCounts[y] = (yearCounts[y] || 0) + 1;
+  });
+  const yearData = Object.entries(yearCounts)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([year, count]) => ({ year, count }));
+
+  const lovedBooks = books.filter((b) => (b.rating ?? 0) >= 4);
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Summary */}
+      <StatCard title="BOOK SUMMARY" icon="📖" delay={0}>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="bg-c-grey rounded-lg p-4">
+            <p className="text-sh-grey mb-1 text-xs">Total Logged</p>
+            <p className="text-p-green text-3xl font-bold">{books.length}</p>
+            <p className="text-sh-grey mt-0.5 text-xs">books</p>
+          </div>
+          <div className="bg-c-grey rounded-lg p-4">
+            <p className="text-sh-grey mb-1 text-xs">Total Rated</p>
+            <p className="text-3xl font-bold" style={{ color: "#40bcf4" }}>{rated.length}</p>
+            <p className="text-sh-grey mt-0.5 text-xs">with a rating</p>
+          </div>
+          <div className="bg-c-grey rounded-lg p-4">
+            <p className="text-sh-grey mb-1 text-xs">Avg Rating</p>
+            <p className="text-p-white text-3xl font-bold">
+              {avgRating > 0 ? avgRating.toFixed(2) : "—"}
+            </p>
+            <p className="text-sh-grey mt-0.5 text-xs">{avgRating > 0 ? "out of 5" : "no ratings yet"}</p>
+          </div>
+          <div className="bg-c-grey rounded-lg p-4">
+            <p className="text-sh-grey mb-1 text-xs">Authors</p>
+            <p className="text-3xl font-bold text-yellow-400">{uniqueAuthors.length}</p>
+            <p className="text-sh-grey mt-0.5 text-xs">unique</p>
+          </div>
+        </div>
+      </StatCard>
+
+      {/* Authors chart + Rating distribution */}
+      <StatCard title="AUTHORS & RATINGS" icon="✍️" delay={100}>
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+          <div>
+            <p className="text-sh-grey mb-2 text-xs">Top Authors</p>
+            {authorChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart
+                  data={authorChartData}
+                  margin={{ top: 0, right: 0, left: -20, bottom: 48 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#283038" vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fill: "#9ab", fontSize: 8 }}
+                    tickLine={false}
+                    axisLine={false}
+                    angle={-35}
+                    textAnchor="end"
+                    interval={0}
+                  />
+                  <YAxis
+                    tick={{ fill: "#9ab", fontSize: 9 }}
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={36}>
+                    {authorChartData.map((_, i) => (
+                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-sh-grey text-xs">Not enough data yet.</p>
+            )}
+          </div>
+
+          <div>
+            {avgRating > 0 ? (
+              <>
+                <p className="text-sh-grey mb-1 text-xs">Average Rating</p>
+                <div className="mb-4 flex items-baseline gap-2">
+                  <p className="text-p-green text-5xl font-bold">{avgRating.toFixed(2)}</p>
+                  <p className="text-sh-grey text-xs">/ 5 · {rated.length} rated</p>
+                </div>
+                <p className="text-sh-grey mb-2 text-xs">Distribution</p>
+                <ResponsiveContainer width="100%" height={110}>
+                  <BarChart
+                    data={ratingDist}
+                    margin={{ top: 0, right: 0, left: -36, bottom: 0 }}
+                  >
+                    <XAxis
+                      dataKey="rating"
+                      tick={{ fill: "#9ab", fontSize: 9 }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: "#9ab", fontSize: 9 }}
+                      allowDecimals={false}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                    <Bar dataKey="count" fill="#40bcf4" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </>
+            ) : (
+              <p className="text-sh-grey text-xs">Rate some books to see distribution.</p>
+            )}
+          </div>
+        </div>
+      </StatCard>
+
+      {/* Timeline + Most read authors */}
+      <StatCard title="TIMELINE & TOP AUTHORS" icon="📅" delay={200}>
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+          <div>
+            <p className="text-sh-grey mb-2 text-xs">Books Logged by Year</p>
+            {yearData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart
+                  data={yearData}
+                  margin={{ top: 0, right: 0, left: -36, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#283038" vertical={false} />
+                  <XAxis
+                    dataKey="year"
+                    tick={{ fill: "#9ab", fontSize: 9 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: "#9ab", fontSize: 9 }}
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                  <Bar dataKey="count" fill="#c084fc" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-sh-grey text-xs">No timeline data yet.</p>
+            )}
+          </div>
+
+          <div>
+            <p className="text-sh-grey mb-3 text-xs">Most Read Authors</p>
+            <div className="flex flex-col gap-2">
+              {topAuthors.map((author, i) => (
+                <div
+                  key={i}
+                  className="bg-c-grey flex items-center justify-between rounded-lg px-4 py-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="text-xs font-bold"
+                      style={{ color: CHART_COLORS[i % CHART_COLORS.length] }}
+                    >
+                      #{i + 1}
+                    </span>
+                    <div>
+                      <p className="text-p-white text-sm font-bold">{author.name}</p>
+                      <p className="text-sh-grey text-xs">
+                        {author.count} book{author.count !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-p-green text-xl font-bold">{author.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </StatCard>
+
+      {/* Loved books grid */}
+      {lovedBooks.length > 0 && (
+        <StatCard title="LOVED BOOKS" icon="❤️" delay={300}>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {lovedBooks.map((book, i) => (
+              <div
+                key={i}
+                className="group cursor-default"
+                style={{
+                  animation: "statsCardIn 0.45s ease both",
+                  animationDelay: `${i * 30}ms`,
+                }}
+              >
+                <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-c-grey">
+                  {book.cover_id ? (
+                    <Image
+                      src={`https://covers.openlibrary.org/b/id/${book.cover_id}-M.jpg`}
+                      alt={book.title}
+                      fill
+                      className="object-cover transition-transform duration-500 group-hover:scale-105"
+                      sizes="(max-width: 640px) 50vw, 20vw"
+                      unoptimized
+                    />
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center gap-2 p-3 text-center">
+                      <span className="text-sh-grey text-2xl">📖</span>
+                      <p className="text-sh-grey text-xs leading-tight">{book.title}</p>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 flex flex-col justify-end rounded-xl bg-black/90 p-3 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                    <p className="text-sh-grey mb-1 text-[10px] font-bold tracking-widest">
+                      YOUR REVIEW
+                    </p>
+                    <p className="text-p-white text-xs leading-relaxed">
+                      {book.review ?? "No review written."}
+                    </p>
+                    {book.rating && (
+                      <p className="mt-1.5 text-xs text-yellow-400">
+                        {"★".repeat(book.rating)}{"☆".repeat(5 - book.rating)}
+                      </p>
+                    )}
+                  </div>
+                  {book.rating && (
+                    <div className="absolute right-2 top-2 rounded-full bg-black/75 px-2 py-0.5 text-xs font-bold text-yellow-400 backdrop-blur-sm">
+                      ★ {book.rating}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2 px-0.5">
+                  <p className="text-p-white truncate text-xs font-bold leading-tight">
+                    {book.title}
+                  </p>
+                  <p className="text-sh-grey truncate text-xs">{book.author}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </StatCard>
+      )}
+    </div>
+  );
+};
+
+// ─── MUSIC TAB ────────────────────────────────────────────────────────────────
+
+const MusicTab = ({
+  albums,
+  ready,
+}: {
+  albums: UserAlbum[];
+  ready: boolean;
+}) => {
+  if (!ready) return <TabSkeleton />;
+
+  if (albums.length === 0) {
+    return (
+      <div className="py-20 text-center">
+        <p className="text-sh-grey mb-3 text-sm">No albums logged yet.</p>
+        <Link
+          href="/music"
+          className="text-p-green text-sm font-bold tracking-widest hover:underline"
+        >
+          HEAD TO /MUSIC TO START TRACKING →
+        </Link>
+      </div>
+    );
+  }
+
+  const rated = albums.filter((a) => a.rating && a.rating > 0);
+  const avgRating =
+    rated.length
+      ? rated.reduce((a, b) => a + (b.rating ?? 0), 0) / rated.length
+      : 0;
+  const uniqueArtists = countBy(albums.map((a) => a.artist));
+  const artistChartData = uniqueArtists.slice(0, 6);
+  const topArtists = uniqueArtists.slice(0, 3);
+
+  const ratingDist = [1, 2, 3, 4, 5].map((r) => ({
+    rating: r.toString(),
+    count: rated.filter((a) => a.rating === r).length,
+  }));
+
+  const yearCounts: Record<string, number> = {};
+  albums.forEach((a) => {
+    const y = isoYear(a.timestamp);
+    if (!y) return;
+    yearCounts[y] = (yearCounts[y] || 0) + 1;
+  });
+  const yearData = Object.entries(yearCounts)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([year, count]) => ({ year, count }));
+
+  const lovedAlbums = albums.filter((a) => (a.rating ?? 0) >= 4);
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Summary */}
+      <StatCard title="MUSIC SUMMARY" icon="🎵" delay={0}>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="bg-c-grey rounded-lg p-4">
+            <p className="text-sh-grey mb-1 text-xs">Total Logged</p>
+            <p className="text-p-green text-3xl font-bold">{albums.length}</p>
+            <p className="text-sh-grey mt-0.5 text-xs">albums</p>
+          </div>
+          <div className="bg-c-grey rounded-lg p-4">
+            <p className="text-sh-grey mb-1 text-xs">Total Rated</p>
+            <p className="text-3xl font-bold" style={{ color: "#40bcf4" }}>{rated.length}</p>
+            <p className="text-sh-grey mt-0.5 text-xs">with a rating</p>
+          </div>
+          <div className="bg-c-grey rounded-lg p-4">
+            <p className="text-sh-grey mb-1 text-xs">Avg Rating</p>
+            <p className="text-p-white text-3xl font-bold">
+              {avgRating > 0 ? avgRating.toFixed(2) : "—"}
+            </p>
+            <p className="text-sh-grey mt-0.5 text-xs">{avgRating > 0 ? "out of 5" : "no ratings yet"}</p>
+          </div>
+          <div className="bg-c-grey rounded-lg p-4">
+            <p className="text-sh-grey mb-1 text-xs">Artists</p>
+            <p className="text-3xl font-bold text-yellow-400">{uniqueArtists.length}</p>
+            <p className="text-sh-grey mt-0.5 text-xs">unique</p>
+          </div>
+        </div>
+      </StatCard>
+
+      {/* Artists chart + Rating distribution */}
+      <StatCard title="ARTISTS & RATINGS" icon="🎤" delay={100}>
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+          <div>
+            <p className="text-sh-grey mb-2 text-xs">Top Artists</p>
+            {artistChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart
+                  data={artistChartData}
+                  margin={{ top: 0, right: 0, left: -20, bottom: 48 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#283038" vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fill: "#9ab", fontSize: 8 }}
+                    tickLine={false}
+                    axisLine={false}
+                    angle={-35}
+                    textAnchor="end"
+                    interval={0}
+                  />
+                  <YAxis
+                    tick={{ fill: "#9ab", fontSize: 9 }}
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={36}>
+                    {artistChartData.map((_, i) => (
+                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-sh-grey text-xs">Not enough data yet.</p>
+            )}
+          </div>
+
+          <div>
+            {avgRating > 0 ? (
+              <>
+                <p className="text-sh-grey mb-1 text-xs">Average Rating</p>
+                <div className="mb-4 flex items-baseline gap-2">
+                  <p className="text-p-green text-5xl font-bold">{avgRating.toFixed(2)}</p>
+                  <p className="text-sh-grey text-xs">/ 5 · {rated.length} rated</p>
+                </div>
+                <p className="text-sh-grey mb-2 text-xs">Distribution</p>
+                <ResponsiveContainer width="100%" height={110}>
+                  <BarChart
+                    data={ratingDist}
+                    margin={{ top: 0, right: 0, left: -36, bottom: 0 }}
+                  >
+                    <XAxis
+                      dataKey="rating"
+                      tick={{ fill: "#9ab", fontSize: 9 }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: "#9ab", fontSize: 9 }}
+                      allowDecimals={false}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                    <Bar dataKey="count" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </>
+            ) : (
+              <p className="text-sh-grey text-xs">Rate some albums to see distribution.</p>
+            )}
+          </div>
+        </div>
+      </StatCard>
+
+      {/* Timeline + Most listened artists */}
+      <StatCard title="TIMELINE & TOP ARTISTS" icon="📅" delay={200}>
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+          <div>
+            <p className="text-sh-grey mb-2 text-xs">Albums Logged by Year</p>
+            {yearData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart
+                  data={yearData}
+                  margin={{ top: 0, right: 0, left: -36, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#283038" vertical={false} />
+                  <XAxis
+                    dataKey="year"
+                    tick={{ fill: "#9ab", fontSize: 9 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: "#9ab", fontSize: 9 }}
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                  <Bar dataKey="count" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-sh-grey text-xs">No timeline data yet.</p>
+            )}
+          </div>
+
+          <div>
+            <p className="text-sh-grey mb-3 text-xs">Most Listened Artists</p>
+            <div className="flex flex-col gap-2">
+              {topArtists.map((artist, i) => (
+                <div
+                  key={i}
+                  className="bg-c-grey flex items-center justify-between rounded-lg px-4 py-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="text-xs font-bold"
+                      style={{ color: CHART_COLORS[i % CHART_COLORS.length] }}
+                    >
+                      #{i + 1}
+                    </span>
+                    <div>
+                      <p className="text-p-white text-sm font-bold">{artist.name}</p>
+                      <p className="text-sh-grey text-xs">
+                        {artist.count} album{artist.count !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-p-green text-xl font-bold">{artist.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </StatCard>
+
+      {/* Loved albums grid */}
+      {lovedAlbums.length > 0 && (
+        <StatCard title="LOVED ALBUMS" icon="❤️" delay={300}>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {lovedAlbums.map((album, i) => (
+              <div
+                key={i}
+                className="group cursor-default"
+                style={{
+                  animation: "statsCardIn 0.45s ease both",
+                  animationDelay: `${i * 30}ms`,
+                }}
+              >
+                <div className="relative aspect-square overflow-hidden rounded-xl bg-c-grey">
+                  <AlbumCoverImg url={album.cover_url} title={album.title} />
+                  <div className="absolute inset-0 flex flex-col justify-end rounded-xl bg-black/90 p-3 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                    <p className="text-sh-grey mb-1 text-[10px] font-bold tracking-widest">
+                      YOUR REVIEW
+                    </p>
+                    <p className="text-p-white text-xs leading-relaxed">
+                      {album.review ?? "No review written."}
+                    </p>
+                    {album.rating && (
+                      <p className="mt-1.5 text-xs text-yellow-400">
+                        {"★".repeat(album.rating)}{"☆".repeat(5 - album.rating)}
+                      </p>
+                    )}
+                  </div>
+                  {album.rating && (
+                    <div className="absolute right-2 top-2 rounded-full bg-black/75 px-2 py-0.5 text-xs font-bold text-yellow-400 backdrop-blur-sm">
+                      ★ {album.rating}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2 px-0.5">
+                  <p className="text-p-white truncate text-xs font-bold leading-tight">
+                    {album.title}
+                  </p>
+                  <p className="text-sh-grey truncate text-xs">{album.artist}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </StatCard>
+      )}
+    </div>
+  );
+};
+
 // ─── LOADING SCREEN ───────────────────────────────────────────────────────────
 
 const LoadingScreen = ({ fetched, total }: { fetched: number; total: number }) => (
@@ -853,14 +1467,25 @@ const LoadingScreen = ({ fetched, total }: { fetched: number; total: number }) =
 
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
+type Tab = "films" | "books" | "music";
+
 export default function StatsPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>("films");
+
+  // Films
   const [movies, setMovies] = useState<TMDBMovie[]>([]);
   const [reviews, setReviews] = useState<UserReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState({ fetched: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
+
+  // Books + Albums (set early from Firestore, before TMDB fetches complete)
+  const [books, setBooks] = useState<UserBook[]>([]);
+  const [albums, setAlbums] = useState<UserAlbum[]>([]);
+  const [booksReady, setBooksReady] = useState(false);
+  const [albumsReady, setAlbumsReady] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -882,6 +1507,10 @@ export default function StatsPage() {
         const parsed = JSON.parse(cached);
         setMovies(parsed.movies ?? []);
         setReviews(parsed.reviews ?? []);
+        setBooks(parsed.books ?? []);
+        setAlbums(parsed.albums ?? []);
+        setBooksReady(true);
+        setAlbumsReady(true);
         setLoading(false);
         return;
       }
@@ -890,14 +1519,26 @@ export default function StatsPage() {
     try {
       const snap = await getDoc(doc(db, "users", uid));
       if (!snap.exists()) {
+        setBooksReady(true);
+        setAlbumsReady(true);
         setLoading(false);
         return;
       }
       const data = snap.data();
       const userReviews: UserReview[] = data.reviews ?? [];
+      const userBooks: UserBook[] = data.books ?? [];
+      const userAlbums: UserAlbum[] = data.albums ?? [];
+
       setReviews(userReviews);
 
-      const watchedIds: string[] = (data.watched ?? []).map((w: any) => w.movieID);
+      // Books + albums are available immediately — mark them ready before
+      // the (potentially slow) TMDB batch fetches begin
+      setBooks(userBooks);
+      setAlbums(userAlbums);
+      setBooksReady(true);
+      setAlbumsReady(true);
+
+      const watchedIds: string[] = (data.watched ?? []).map((w: { movieID: string }) => w.movieID);
       const reviewIds: string[] = userReviews.map((r) => r.movieID);
       const allIds = [...new Set([...watchedIds, ...reviewIds])];
 
@@ -926,7 +1567,15 @@ export default function StatsPage() {
 
       setMovies(fetched);
       try {
-        sessionStorage.setItem(cacheKey, JSON.stringify({ movies: fetched, reviews: userReviews }));
+        sessionStorage.setItem(
+          cacheKey,
+          JSON.stringify({
+            movies: fetched,
+            reviews: userReviews,
+            books: userBooks,
+            albums: userAlbums,
+          })
+        );
       } catch {}
     } catch (err) {
       console.error(err);
@@ -951,14 +1600,14 @@ export default function StatsPage() {
     );
   }
 
-  if (!movies.length && !reviews.length) {
+  if (!movies.length && !reviews.length && !books.length && !albums.length) {
     return (
       <>
         <LayoutNavbar />
         <main className="bg-h-blue flex min-h-screen flex-col items-center justify-center px-4 text-center">
           <p className="text-p-green mb-2 text-4xl font-bold tracking-widest">STATS</p>
           <p className="text-sh-grey text-sm">
-            Add films to your watched list to start building your stats.
+            Watch films, log books, and add albums to start building your stats.
           </p>
         </main>
         <Footer />
@@ -967,6 +1616,18 @@ export default function StatsPage() {
   }
 
   const movieMap = Object.fromEntries(movies.map((m) => [m.id.toString(), m]));
+
+  const EYEBROW: Record<Tab, string> = {
+    films: "YOUR FILM DIARY",
+    books: "YOUR BOOK SHELF",
+    music: "YOUR MUSIC COLLECTION",
+  };
+
+  const SUBTITLE: Record<Tab, string> = {
+    films: `${movies.length} film${movies.length !== 1 ? "s" : ""} analyzed${reviews.length > 0 ? ` · ${reviews.length} review${reviews.length !== 1 ? "s" : ""}` : ""}`,
+    books: `${books.length} book${books.length !== 1 ? "s" : ""} logged`,
+    music: `${albums.length} album${albums.length !== 1 ? "s" : ""} logged`,
+  };
 
   return (
     <>
@@ -981,28 +1642,77 @@ export default function StatsPage() {
 
       <main className="bg-h-blue min-h-screen px-4 pb-16 pt-10">
         <div className="mx-auto max-w-4xl">
+
           {/* Header */}
-          <div className="mb-10 text-center">
-            <p className="text-sh-grey mb-1 text-xs font-bold tracking-[0.3em]">YOUR FILM DIARY</p>
+          <div className="mb-8 text-center">
+            <p className="text-sh-grey mb-1 text-xs font-bold tracking-[0.3em]">
+              {EYEBROW[activeTab]}
+            </p>
             <h1
               className="text-p-green mb-2 text-5xl font-bold tracking-widest md:text-6xl"
               style={{ textShadow: "0 0 40px rgba(0,224,84,0.3)" }}
             >
               STATS
             </h1>
-            <p className="text-sh-grey text-sm">
-              {movies.length} film{movies.length !== 1 ? "s" : ""} analyzed
-              {reviews.length > 0 && ` · ${reviews.length} review${reviews.length !== 1 ? "s" : ""}`}
-            </p>
+            <p className="text-sh-grey text-sm">{SUBTITLE[activeTab]}</p>
           </div>
 
-          {/* Sections */}
-          <div className="flex flex-col gap-6">
-            <FunSection movies={movies} reviews={reviews} />
-            <RatingSection reviews={reviews} movieMap={movieMap} />
-            <ContentSection movies={movies} />
-            <CreatorSection movies={movies} />
+          {/* Tab switcher */}
+          <div className="mb-8 flex justify-center">
+            <div className="border-b-grey bg-drop-black flex overflow-x-auto rounded-full border p-1">
+              {(["films", "books", "music"] as Tab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={[
+                    "whitespace-nowrap rounded-full px-5 py-2 text-xs font-bold tracking-widest transition-colors",
+                    activeTab === tab
+                      ? "text-p-green"
+                      : "text-sh-grey hover:text-p-white",
+                  ].join(" ")}
+                  style={
+                    activeTab === tab
+                      ? {
+                          background: "rgba(0,224,84,0.08)",
+                          borderBottom: "2px solid #00e054",
+                        }
+                      : undefined
+                  }
+                >
+                  {tab.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* Tab content */}
+          {activeTab === "films" && (
+            <div className="flex flex-col gap-6">
+              {!movies.length && !reviews.length ? (
+                <div className="py-16 text-center">
+                  <p className="text-sh-grey text-sm">
+                    Add films to your watched list to start building your film stats.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <FunSection movies={movies} reviews={reviews} />
+                  <RatingSection reviews={reviews} movieMap={movieMap} />
+                  <ContentSection movies={movies} />
+                  <CreatorSection movies={movies} />
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === "books" && (
+            <BooksTab books={books} ready={booksReady} />
+          )}
+
+          {activeTab === "music" && (
+            <MusicTab albums={albums} ready={albumsReady} />
+          )}
+
         </div>
       </main>
 
