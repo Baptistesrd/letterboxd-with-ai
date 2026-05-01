@@ -7,15 +7,11 @@ import { useRouter } from "next/navigation";
 import { LayoutNavbar } from "app/components/Navigation/LayoutNavbar";
 import { Footer } from "app/components/Navigation/Footer";
 import { UserAlbum } from "app/types";
-
-// ─── TYPES ────────────────────────────────────────────────────────────────────
-
-interface MBReleaseGroup {
-  id: string;
-  title: string;
-  "artist-credit": { artist: { name: string } }[];
-  "first-release-date"?: string;
-}
+import {
+  MediaSearchInput,
+  SearchResult,
+  MBReleaseGroup,
+} from "app/components/Search/MediaSearchInput";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -46,19 +42,7 @@ const StarRating = ({
   </div>
 );
 
-const LoadingDots = () => (
-  <span className="inline-flex items-center gap-1.5">
-    {[0, 1, 2].map((i) => (
-      <span
-        key={i}
-        className="bg-p-green inline-block h-2 w-2 rounded-full"
-        style={{ animation: `dotPulse 1.4s ease-in-out ${i * 0.22}s infinite` }}
-      />
-    ))}
-  </span>
-);
-
-// Album cover that gracefully handles 404
+/** Album cover that gracefully handles CoverArt Archive 404s. */
 function AlbumCover({
   mbid,
   title,
@@ -90,6 +74,14 @@ function AlbumCover({
   );
 }
 
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+const getArtistName = (album: MBReleaseGroup) =>
+  album["artist-credit"]?.[0]?.artist?.name ?? "Unknown";
+
+const getReleaseYear = (album: MBReleaseGroup) =>
+  album["first-release-date"]?.slice(0, 4) ?? "";
+
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
 export default function MusicPage() {
@@ -97,11 +89,6 @@ export default function MusicPage() {
 
   const [ready, setReady] = useState(false);
   const [uid, setUid] = useState<string | null>(null);
-
-  const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<MBReleaseGroup[]>([]);
-  const [searchError, setSearchError] = useState<string | null>(null);
 
   const [selectedAlbum, setSelectedAlbum] = useState<MBReleaseGroup | null>(null);
   const [modalRating, setModalRating] = useState(0);
@@ -138,25 +125,6 @@ export default function MusicPage() {
     }
   };
 
-  const searchAlbums = async () => {
-    if (!query.trim()) return;
-    setSearching(true);
-    setSearchError(null);
-    setSearchResults([]);
-    try {
-      const res = await fetch(
-        `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(query.trim())}&fmt=json&limit=10&type=album`
-      );
-      if (!res.ok) throw new Error("API error");
-      const data = await res.json();
-      setSearchResults(data["release-groups"] ?? []);
-    } catch {
-      setSearchError("Failed to search albums. Please try again.");
-    } finally {
-      setSearching(false);
-    }
-  };
-
   const openModal = (album: MBReleaseGroup) => {
     setSelectedAlbum(album);
     setModalRating(0);
@@ -165,11 +133,9 @@ export default function MusicPage() {
 
   const closeModal = () => setSelectedAlbum(null);
 
-  const getArtistName = (album: MBReleaseGroup) =>
-    album["artist-credit"]?.[0]?.artist?.name ?? "Unknown";
-
-  const getReleaseYear = (album: MBReleaseGroup) =>
-    album["first-release-date"]?.slice(0, 4) ?? "";
+  const handleSearchSelect = (item: SearchResult) => {
+    if (item.type === "album") openModal(item.raw);
+  };
 
   const saveAlbum = async () => {
     if (!selectedAlbum || !uid || modalRating === 0) return;
@@ -228,10 +194,6 @@ export default function MusicPage() {
           from { opacity: 0; transform: translateY(20px); }
           to   { opacity: 1; transform: translateY(0); }
         }
-        @keyframes dotPulse {
-          0%, 100% { opacity: 0.25; transform: scale(0.75); }
-          50%       { opacity: 1;    transform: scale(1.1);  }
-        }
         @keyframes fadeIn {
           from { opacity: 0; }
           to   { opacity: 1; }
@@ -255,7 +217,7 @@ export default function MusicPage() {
               MUSIC
             </h1>
             <p className="text-sh-grey mt-2 text-sm">
-              Log albums you've listened to and track your musical journey
+              Log albums you&apos;ve listened to and track your musical journey
             </p>
           </div>
 
@@ -267,74 +229,12 @@ export default function MusicPage() {
             <p className="text-sh-grey mb-3 text-xs font-bold tracking-widest">
               SEARCH ALBUMS
             </p>
-
-            <div className="flex gap-3">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && searchAlbums()}
-                placeholder="Search by album or artist…"
-                className="bg-c-grey border-b-grey text-p-white placeholder:text-sh-grey flex-1 rounded-xl border px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
-              />
-              <button
-                onClick={searchAlbums}
-                disabled={searching || !query.trim()}
-                className="bg-p-green hover:bg-b-green text-h-blue rounded-xl px-6 py-2.5 text-sm font-bold tracking-widest transition-colors disabled:opacity-40"
-              >
-                {searching ? <LoadingDots /> : "SEARCH"}
-              </button>
-            </div>
-
-            {searchError && (
-              <p className="text-red-400 mt-3 text-xs">{searchError}</p>
-            )}
-
-            {/* Search results */}
-            {searchResults.length > 0 && (
-              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {searchResults.map((album, i) => (
-                  <div
-                    key={album.id}
-                    className="group cursor-pointer"
-                    style={{
-                      animation: "recsCardIn 0.4s ease both",
-                      animationDelay: `${i * 30}ms`,
-                    }}
-                    onClick={() => openModal(album)}
-                  >
-                    <div className="relative aspect-square overflow-hidden rounded-xl bg-c-grey">
-                      <AlbumCover mbid={album.id} title={album.title} />
-                      {/* Log overlay */}
-                      <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/70 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                        <span className="text-p-green text-xs font-bold tracking-wider">
-                          + LOG
-                        </span>
-                      </div>
-                    </div>
-                    <div className="mt-2 px-0.5">
-                      <p className="text-p-white truncate text-xs font-bold leading-tight">
-                        {album.title}
-                      </p>
-                      <p className="text-sh-grey truncate text-xs">
-                        {getArtistName(album)}
-                        {getReleaseYear(album) && (
-                          <span className="ml-1 opacity-60">
-                            {getReleaseYear(album)}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {!searching && searchResults.length === 0 && query.trim() && !searchError && (
-              <p className="text-sh-grey mt-4 text-center text-sm">
-                No results found.
-              </p>
-            )}
+            <MediaSearchInput
+              type="album"
+              placeholder="Search by album or artist…"
+              onSelect={handleSearchSelect}
+              alreadyLoggedIds={loggedAlbums.map((a) => a.mbid)}
+            />
           </div>
 
           {/* Logged albums */}
@@ -395,9 +295,7 @@ export default function MusicPage() {
                       <p className="text-p-white truncate text-xs font-bold leading-tight">
                         {album.title}
                       </p>
-                      <p className="text-sh-grey truncate text-xs">
-                        {album.artist}
-                      </p>
+                      <p className="text-sh-grey truncate text-xs">{album.artist}</p>
                     </div>
                   </div>
                 ))}

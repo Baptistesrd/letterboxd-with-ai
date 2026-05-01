@@ -8,16 +8,11 @@ import Image from "next/image";
 import { LayoutNavbar } from "app/components/Navigation/LayoutNavbar";
 import { Footer } from "app/components/Navigation/Footer";
 import { UserBook } from "app/types";
-
-// ─── TYPES ────────────────────────────────────────────────────────────────────
-
-interface OLBook {
-  key: string;
-  title: string;
-  author_name?: string[];
-  cover_i?: number;
-  first_publish_year?: number;
-}
+import {
+  MediaSearchInput,
+  SearchResult,
+  OLBook,
+} from "app/components/Search/MediaSearchInput";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -48,18 +43,6 @@ const StarRating = ({
   </div>
 );
 
-const LoadingDots = () => (
-  <span className="inline-flex items-center gap-1.5">
-    {[0, 1, 2].map((i) => (
-      <span
-        key={i}
-        className="bg-p-green inline-block h-2 w-2 rounded-full"
-        style={{ animation: `dotPulse 1.4s ease-in-out ${i * 0.22}s infinite` }}
-      />
-    ))}
-  </span>
-);
-
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
 export default function BooksPage() {
@@ -67,11 +50,6 @@ export default function BooksPage() {
 
   const [ready, setReady] = useState(false);
   const [uid, setUid] = useState<string | null>(null);
-
-  const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<OLBook[]>([]);
-  const [searchError, setSearchError] = useState<string | null>(null);
 
   const [selectedBook, setSelectedBook] = useState<OLBook | null>(null);
   const [modalRating, setModalRating] = useState(0);
@@ -108,24 +86,6 @@ export default function BooksPage() {
     }
   };
 
-  const searchBooks = async () => {
-    if (!query.trim()) return;
-    setSearching(true);
-    setSearchError(null);
-    setSearchResults([]);
-    try {
-      const res = await fetch(
-        `https://openlibrary.org/search.json?q=${encodeURIComponent(query.trim())}&limit=10`
-      );
-      const data = await res.json();
-      setSearchResults(data.docs ?? []);
-    } catch {
-      setSearchError("Failed to search books. Please try again.");
-    } finally {
-      setSearching(false);
-    }
-  };
-
   const openModal = (book: OLBook) => {
     setSelectedBook(book);
     setModalRating(0);
@@ -133,6 +93,10 @@ export default function BooksPage() {
   };
 
   const closeModal = () => setSelectedBook(null);
+
+  const handleSearchSelect = (item: SearchResult) => {
+    if (item.type === "book") openModal(item.raw);
+  };
 
   const saveBook = async () => {
     if (!selectedBook || !uid || modalRating === 0) return;
@@ -191,10 +155,6 @@ export default function BooksPage() {
           from { opacity: 0; transform: translateY(20px); }
           to   { opacity: 1; transform: translateY(0); }
         }
-        @keyframes dotPulse {
-          0%, 100% { opacity: 0.25; transform: scale(0.75); }
-          50%       { opacity: 1;    transform: scale(1.1);  }
-        }
         @keyframes fadeIn {
           from { opacity: 0; }
           to   { opacity: 1; }
@@ -218,7 +178,7 @@ export default function BooksPage() {
               BOOKS
             </h1>
             <p className="text-sh-grey mt-2 text-sm">
-              Log books you've read and track your literary journey
+              Log books you&apos;ve read and track your literary journey
             </p>
           </div>
 
@@ -230,85 +190,12 @@ export default function BooksPage() {
             <p className="text-sh-grey mb-3 text-xs font-bold tracking-widest">
               SEARCH BOOKS
             </p>
-
-            <div className="flex gap-3">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && searchBooks()}
-                placeholder="Search by title, author, or ISBN…"
-                className="bg-c-grey border-b-grey text-p-white placeholder:text-sh-grey flex-1 rounded-xl border px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
-              />
-              <button
-                onClick={searchBooks}
-                disabled={searching || !query.trim()}
-                className="bg-p-green hover:bg-b-green text-h-blue rounded-xl px-6 py-2.5 text-sm font-bold tracking-widest transition-colors disabled:opacity-40"
-              >
-                {searching ? <LoadingDots /> : "SEARCH"}
-              </button>
-            </div>
-
-            {searchError && (
-              <p className="text-red-400 mt-3 text-xs">{searchError}</p>
-            )}
-
-            {/* Search results */}
-            {searchResults.length > 0 && (
-              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {searchResults.map((book, i) => (
-                  <div
-                    key={book.key}
-                    className="group cursor-pointer"
-                    style={{
-                      animation: "recsCardIn 0.4s ease both",
-                      animationDelay: `${i * 30}ms`,
-                    }}
-                    onClick={() => openModal(book)}
-                  >
-                    <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-c-grey">
-                      {book.cover_i ? (
-                        <Image
-                          src={OL_COVER(book.cover_i)}
-                          alt={book.title}
-                          fill
-                          className="object-cover transition-transform duration-500 group-hover:scale-105"
-                          sizes="(max-width: 640px) 50vw, 20vw"
-                          unoptimized
-                        />
-                      ) : (
-                        <div className="flex h-full flex-col items-center justify-center gap-2 p-3 text-center">
-                          <span className="text-sh-grey text-2xl">📖</span>
-                          <p className="text-sh-grey text-xs leading-tight">
-                            {book.title}
-                          </p>
-                        </div>
-                      )}
-                      {/* Log overlay */}
-                      <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/70 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                        <span className="text-p-green text-xs font-bold tracking-wider">
-                          + LOG
-                        </span>
-                      </div>
-                    </div>
-                    <div className="mt-2 px-0.5">
-                      <p className="text-p-white truncate text-xs font-bold leading-tight">
-                        {book.title}
-                      </p>
-                      <p className="text-sh-grey truncate text-xs">
-                        {book.author_name?.[0] ?? "Unknown"}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {!searching && searchResults.length === 0 && query.trim() && !searchError && (
-              <p className="text-sh-grey mt-4 text-center text-sm">
-                No results found.
-              </p>
-            )}
+            <MediaSearchInput
+              type="book"
+              placeholder="Search by title, author, or ISBN…"
+              onSelect={handleSearchSelect}
+              alreadyLoggedIds={loggedBooks.map((b) => b.bookKey)}
+            />
           </div>
 
           {/* Logged books */}
@@ -385,9 +272,7 @@ export default function BooksPage() {
                       <p className="text-p-white truncate text-xs font-bold leading-tight">
                         {book.title}
                       </p>
-                      <p className="text-sh-grey truncate text-xs">
-                        {book.author}
-                      </p>
+                      <p className="text-sh-grey truncate text-xs">{book.author}</p>
                     </div>
                   </div>
                 ))}
