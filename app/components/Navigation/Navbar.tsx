@@ -28,11 +28,6 @@ const menuLinks = [
   //   href: "/lists",
   // },
   {
-    id: 3,
-    name: "MEMBERS",
-    href: "/members",
-  },
-  {
     id: 4,
     name: "REVIEWS",
     href: "/reviews",
