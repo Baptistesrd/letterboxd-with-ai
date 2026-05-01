@@ -39,3 +39,23 @@ export interface Movie {
   backdrop_path: string;
   poster_path: string;
 }
+
+export interface UserBook {
+  bookKey: string;       // Open Library key e.g. "/works/OL45804W"
+  title: string;
+  author: string;
+  cover_id?: number;
+  rating?: number;       // 1-5
+  review?: string;
+  timestamp?: string;
+}
+
+export interface UserAlbum {
+  mbid: string;          // MusicBrainz ID
+  title: string;
+  artist: string;
+  cover_url?: string;
+  rating?: number;       // 1-5
+  review?: string;
+  timestamp?: string;
+}

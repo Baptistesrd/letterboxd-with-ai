@@ -47,6 +47,21 @@ const menuLinks = [
     name: "AI PICKS",
     href: "/recommendations",
   },
+  {
+    id: 7,
+    name: "BOOKS",
+    href: "/books",
+  },
+  {
+    id: 8,
+    name: "MUSIC",
+    href: "/music",
+  },
+  {
+    id: 9,
+    name: "FOR YOU",
+    href: "/foryou",
+  },
 ];
 
 const Navbar = ({ userName, profilePic, isLoggedIn, isTransparentNav }) => {
