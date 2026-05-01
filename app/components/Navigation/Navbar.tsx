@@ -43,13 +43,8 @@ const menuLinks = [
   },
   {
     id: 6,
-    name: "AI PICKS",
-    href: "/recommendations",
-  },
-  {
-    id: 9,
     name: "FOR YOU",
-    href: "/foryou",
+    href: "/recommendations",
   },
 ];
 

@@ -123,17 +123,23 @@ export default function MusicPage() {
     setSaving(true);
     try {
       const artistMbid = selectedAlbum["artist-credit"]?.[0]?.artist?.id || undefined;
+
       const entry: UserAlbum = {
         mbid: selectedAlbum.id,
         title: selectedAlbum.title,
         artist: getArtistName(selectedAlbum),
-        cover_url: CAA_COVER(selectedAlbum.id),
         rating: modalRating,
-        review: modalReview.trim() || undefined,
         timestamp: new Date().toISOString(),
-        artistMbid,
+        ...(CAA_COVER(selectedAlbum.id) && { cover_url: CAA_COVER(selectedAlbum.id) }),
+        ...(modalReview.trim() && { review: modalReview.trim() }),
+        ...(artistMbid && { artistMbid }),
       };
-      await setDoc(doc(db, "users", uid), { albums: arrayUnion(entry) }, { merge: true });
+
+      await setDoc(
+        doc(db, "users", uid),
+        { albums: arrayUnion(entry) },
+        { merge: true }
+      );
       setLoggedAlbums((prev) => [...prev, entry]);
       closeModal();
     } catch (err) {
@@ -142,7 +148,7 @@ export default function MusicPage() {
       setSaving(false);
     }
   };
-
+  
   const filteredAlbums = loggedAlbums.filter((a) => {
     if (activeFilter === "loved") return (a.rating ?? 0) >= 4;
     if (activeFilter === "recent") {
