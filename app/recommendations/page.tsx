@@ -284,7 +284,15 @@ const LoadingDots = () => (
   </span>
 );
 
-const MovieCard = ({ rec, index }: { rec: FilmRec; index: number }) => (
+const MovieCard = ({
+  rec,
+  index,
+  watchedIds,
+}: {
+  rec: FilmRec;
+  index: number;
+  watchedIds: string[];
+}) => (
   <div
     className="group cursor-default"
     style={{
@@ -293,6 +301,18 @@ const MovieCard = ({ rec, index }: { rec: FilmRec; index: number }) => (
     }}
   >
     <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-[#1a1d23]">
+      {watchedIds.includes(String(rec.tmdb_id)) && (
+        <div
+          className="absolute left-2 top-2 z-10 rounded-full px-2 py-0.5 text-[10px] font-bold backdrop-blur-sm"
+          style={{
+            background: "rgba(0,224,84,0.15)",
+            color: "#00e054",
+            border: "1px solid rgba(0,224,84,0.3)",
+          }}
+        >
+          ✓ Watched
+        </div>
+      )}
       {rec.poster_path ? (
         <Image
           src={TMDB_POSTER + rec.poster_path}
@@ -1199,6 +1219,7 @@ export default function ForYouPage() {
                       key={`film-${rec.tmdb_id}-${i}`}
                       rec={rec}
                       index={i}
+                      watchedIds={watchedIds}
                     />
                   ))}
                 </div>
