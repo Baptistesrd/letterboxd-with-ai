@@ -13,6 +13,15 @@ import {
   SearchResult,
   MBReleaseGroup,
 } from "app/components/Search/MediaSearchInput";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts";
 
 const CAA_COVER = (mbid: string) =>
   `https://coverartarchive.org/release-group/${mbid}/front-250`;
@@ -44,6 +53,16 @@ const StarDisplay = ({ rating }: { rating: number }) => (
     <span className="opacity-30">{"★".repeat(5 - rating)}</span>
   </span>
 );
+
+const DarkTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="border-b-grey bg-drop-black rounded border px-3 py-2 text-xs shadow-lg">
+      {label && <p className="text-p-white mb-0.5 font-bold">{label}</p>}
+      <p style={{ color: "#40bcf4" }} className="font-bold">{payload[0].value}</p>
+    </div>
+  );
+};
 
 function AlbumCover({ mbid, title, className = "" }: { mbid: string; title: string; className?: string }) {
   const [failed, setFailed] = useState(false);
@@ -148,7 +167,7 @@ export default function MusicPage() {
       setSaving(false);
     }
   };
-  
+
   const filteredAlbums = loggedAlbums.filter((a) => {
     if (activeFilter === "loved") return (a.rating ?? 0) >= 4;
     if (activeFilter === "recent") {
@@ -172,6 +191,12 @@ export default function MusicPage() {
   )
     .sort(([, a], [, b]) => b - a)
     .slice(0, 3);
+
+  // Rating distribution chart data
+  const ratingData = [1, 2, 3, 4, 5].map((n) => ({
+    rating: "★".repeat(n),
+    count: loggedAlbums.filter((a) => a.rating === n).length,
+  }));
 
   if (!ready || loadingAlbums) {
     return (
@@ -340,6 +365,38 @@ export default function MusicPage() {
               </div>
             </div>
           </div>
+
+          {/* ── RATING DISTRIBUTION ────────────────────────────────────── */}
+          {loggedAlbums.length >= 3 && (
+            <div
+              className="border-b-grey bg-drop-black mb-8 rounded-xl border p-5"
+              style={{ animation: "recsCardIn 0.4s ease 0.08s both" }}
+            >
+              <p className="text-sh-grey mb-4 text-xs font-bold tracking-widest">
+                RATING DISTRIBUTION
+              </p>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart
+                  data={ratingData}
+                  margin={{ top: 0, right: 0, left: -36, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#283038" vertical={false} />
+                  <XAxis
+                    dataKey="rating"
+                    tick={{ fill: "#9ab", fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    hide={true}
+                    allowDecimals={false}
+                  />
+                  <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                  <Bar dataKey="count" fill="#40bcf4" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
 
           {/* ── COLLECTION ─────────────────────────────────────────────── */}
           <div style={{ animation: "recsCardIn 0.4s ease 0.1s both" }}>

@@ -1,6 +1,9 @@
 "use client";
 import { LayoutNavbar } from "app/components/Navigation/LayoutNavbar";
-import React, { Usable, use, useEffect, useState } from "react";
+import React, { use, useEffect, useState } from "react";
+import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "app/firebase/firebase";
 
 import filterOptions from "./filtering/arrays";
 import { Filter } from "app/components/Filter/Filter";
@@ -8,8 +11,28 @@ import { PopularMovies } from "app/components/Home/PopularMovies";
 import { FilterResults } from "app/components/Filter/FilterResults";
 import { useRouter } from "next/navigation";
 import { Footer } from "app/components/Navigation/Footer";
+import { UserReview } from "app/types";
 
 import { useSearchParams } from "next/navigation";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts";
+
+const DarkTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="border-b-grey bg-drop-black rounded border px-3 py-2 text-xs shadow-lg">
+      {label && <p className="text-p-white mb-0.5 font-bold">{label}</p>}
+      <p className="text-p-green font-bold">{payload[0].value}</p>
+    </div>
+  );
+};
 
 export default function Page() {
   const searchParams = useSearchParams();
@@ -21,6 +44,9 @@ export default function Page() {
   const [filterResults, setFilterResults] = useState<any[] | null>(null);
   const [popularMovies, setPopularMovies] = useState<any[] | null>(null);
 
+  // User rating data (loaded silently after auth — no blocking)
+  const [userReviews, setUserReviews] = useState<UserReview[]>([]);
+
   useEffect(() => {
     const initialFilters: { [key: string]: string } = {};
     for (const [key, value] of searchParams.entries()) {
@@ -28,6 +54,18 @@ export default function Page() {
     }
     setActiveFilters(initialFilters);
   }, [searchParams]);
+
+  // Load user reviews silently after auth (non-blocking)
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists()) setUserReviews(snap.data().reviews ?? []);
+      } catch {}
+    });
+    return () => unsub();
+  }, []);
 
   const onSelect = (value: string, title: string) => {
     let updated = { ...activeFilters };
@@ -102,11 +140,59 @@ export default function Page() {
     fetchData();
   }, [activeFilters]);
 
+  // Rating distribution from the user's own reviews
+  const ratedReviews = userReviews.filter((r) => r.rating !== undefined && r.rating > 0);
+  const ratingData = [1, 2, 3, 4, 5].map((n) => ({
+    rating: "★".repeat(n),
+    count: ratedReviews.filter((r) => r.rating === n).length,
+  }));
+
   return (
     <>
+      <style>{`
+        @keyframes recsCardIn {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
       <LayoutNavbar />
+
       <div className="site-body min-h-[80vh] py-5">
         <div className="px-4 font-['Graphik'] md:mx-auto md:my-0 md:flex md:w-[950px] md:flex-col">
+
+          {/* ── RATING DISTRIBUTION (shown when user has 3+ rated films) ── */}
+          {ratedReviews.length >= 3 && (
+            <div
+              className="border-b-grey bg-drop-black mb-6 rounded-xl border p-5"
+              style={{ animation: "recsCardIn 0.4s ease 0.08s both" }}
+            >
+              <p className="text-sh-grey mb-4 text-xs font-bold tracking-widest">
+                YOUR RATING DISTRIBUTION
+              </p>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart
+                  data={ratingData}
+                  margin={{ top: 0, right: 0, left: -36, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#283038" vertical={false} />
+                  <XAxis
+                    dataKey="rating"
+                    tick={{ fill: "#9ab", fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    hide={true}
+                    allowDecimals={false}
+                  />
+                  <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                  <Bar dataKey="count" fill="#00e054" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
           <div className="md:flex md:flex-row">
             <p className="sans-serif block self-center px-4 text-xs uppercase tracking-normal text-sh-grey md:px-0">
               Browse by:
