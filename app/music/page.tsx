@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc, setDoc, arrayUnion } from "firebase/firestore";
+import { doc, getDoc, setDoc, arrayUnion, arrayRemove, updateDoc } from "firebase/firestore";
 import { auth, db } from "app/firebase/firebase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -103,6 +103,11 @@ export default function MusicPage() {
   const [loggedAlbums, setLoggedAlbums] = useState<UserAlbum[]>([]);
   const [loadingAlbums, setLoadingAlbums] = useState(true);
   const [activeFilter, setActiveFilter] = useState<"all" | "loved" | "recent">("all");
+  const [sortBy, setSortBy] = useState<"recent" | "rating" | "az">("recent");
+  const [editingItem, setEditingItem] = useState<UserAlbum | null>(null);
+  const [editRating, setEditRating] = useState(0);
+  const [editReview, setEditReview] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -168,6 +173,46 @@ export default function MusicPage() {
     }
   };
 
+  const deleteAlbum = async (album: UserAlbum) => {
+    if (!uid) return;
+    try {
+      await updateDoc(doc(db, "users", uid), {
+        albums: arrayRemove(album)
+      });
+      setLoggedAlbums((prev) => prev.filter((a) => a.mbid !== album.mbid));
+    } catch (err) {
+      console.error("deleteAlbum error:", err);
+    }
+  };
+
+  const updateAlbum = async () => {
+    if (!editingItem || !uid || editRating === 0) return;
+    setEditSaving(true);
+    try {
+      const oldEntry = editingItem;
+      const newEntry: UserAlbum = {
+        ...oldEntry,
+        rating: editRating,
+        ...(editReview.trim() ? { review: editReview.trim() } : {}),
+      };
+      // Remove old, add new (Firestore has no arrayUpdate)
+      await updateDoc(doc(db, "users", uid), {
+        albums: arrayRemove(oldEntry)
+      });
+      await updateDoc(doc(db, "users", uid), {
+        albums: arrayUnion(newEntry)
+      });
+      setLoggedAlbums((prev) =>
+        prev.map((a) => a.mbid === oldEntry.mbid ? newEntry : a)
+      );
+      setEditingItem(null);
+    } catch (err) {
+      console.error("updateAlbum error:", err);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const filteredAlbums = loggedAlbums.filter((a) => {
     if (activeFilter === "loved") return (a.rating ?? 0) >= 4;
     if (activeFilter === "recent") {
@@ -175,6 +220,13 @@ export default function MusicPage() {
       return Date.now() - ts < 1000 * 60 * 60 * 24 * 30;
     }
     return true;
+  });
+
+  const sortedAlbums = [...filteredAlbums].sort((a, b) => {
+    if (sortBy === "rating") return (b.rating ?? 0) - (a.rating ?? 0);
+    if (sortBy === "az") return a.title.localeCompare(b.title);
+    // recent: by timestamp desc
+    return new Date(b.timestamp ?? 0).getTime() - new Date(a.timestamp ?? 0).getTime();
   });
 
   const avgRating =
@@ -403,7 +455,7 @@ export default function MusicPage() {
 
             {/* Toolbar */}
             <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-sh-grey text-xs font-bold tracking-widest mr-2">YOUR COLLECTION</p>
                 {(["all", "loved", "recent"] as const).map((f) => (
                   <button
@@ -419,10 +471,24 @@ export default function MusicPage() {
                     {f === "all" ? `ALL ${loggedAlbums.length}` : f === "loved" ? "★ LOVED" : "RECENT"}
                   </button>
                 ))}
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as "recent" | "rating" | "az")}
+                  className="rounded-lg px-3 py-1 text-[10px] font-bold tracking-wider appearance-none cursor-pointer"
+                  style={{
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.06)",
+                    color: "#6b7a8d",
+                  }}
+                >
+                  <option value="recent">RECENT</option>
+                  <option value="rating">TOP RATED</option>
+                  <option value="az">A → Z</option>
+                </select>
               </div>
             </div>
 
-            {filteredAlbums.length === 0 ? (
+            {sortedAlbums.length === 0 ? (
               <div className="border-b-grey bg-drop-black rounded-2xl border p-16 text-center">
                 <p className="text-4xl mb-3">🎵</p>
                 <p className="text-sh-grey text-sm">
@@ -433,13 +499,22 @@ export default function MusicPage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {filteredAlbums.map((album, i) => (
+                {sortedAlbums.map((album, i) => (
                   <div
                     key={`${album.mbid}-${i}`}
-                    className="group album-card cursor-default"
+                    className="group album-card cursor-default relative"
                     style={{ animation: "recsCardIn 0.45s ease both", animationDelay: `${i * 30}ms` }}
                   >
                     <div className="relative aspect-square overflow-hidden rounded-xl bg-c-grey">
+                      {/* Delete button */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteAlbum(album); }}
+                        className="absolute left-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold opacity-0 transition-all group-hover:opacity-100"
+                        style={{ background: "rgba(220,38,38,0.85)", color: "white" }}
+                      >
+                        ✕
+                      </button>
+
                       <AlbumCover mbid={album.mbid} title={album.title} />
 
                       {/* Hover overlay */}
@@ -460,14 +535,20 @@ export default function MusicPage() {
                         </p>
                       </div>
 
-                      {/* Rating badge */}
+                      {/* Rating badge — click to edit */}
                       {album.rating && (
-                        <div
-                          className="absolute right-2 top-2 rounded-full px-2 py-0.5 text-xs font-bold text-yellow-400 backdrop-blur-sm"
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingItem(album);
+                            setEditRating(album.rating ?? 0);
+                            setEditReview(album.review ?? "");
+                          }}
+                          className="absolute right-2 top-2 rounded-full px-2 py-0.5 text-xs font-bold text-yellow-400 backdrop-blur-sm transition-transform hover:scale-110"
                           style={{ background: "rgba(0,0,0,0.75)" }}
                         >
                           ★ {album.rating}
-                        </div>
+                        </button>
                       )}
                     </div>
 
@@ -561,6 +642,83 @@ export default function MusicPage() {
                   }}
                 >
                   {saving ? "Saving…" : "LOG ALBUM"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT MODAL ─────────────────────────────────────────────────── */}
+      {editingItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 backdrop-blur-sm"
+          style={{ animation: "fadeIn 0.2s ease both" }}
+          onClick={(e) => e.target === e.currentTarget && setEditingItem(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl p-[1px]"
+            style={{
+              animation: "recsCardIn 0.25s ease both",
+              background: "linear-gradient(135deg, rgba(64,188,244,0.2), rgba(255,255,255,0.05))",
+            }}
+          >
+            <div className="bg-drop-black rounded-2xl p-6">
+              {/* Album info */}
+              <div className="mb-6 flex gap-4">
+                <div className="bg-c-grey relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl shadow-2xl">
+                  <AlbumCover mbid={editingItem.mbid} title={editingItem.title} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sh-grey mb-1 text-[10px] font-bold tracking-widest">EDIT RATING</p>
+                  <p className="text-p-white font-bold leading-tight text-base">{editingItem.title}</p>
+                  <p className="text-sh-grey mt-1 text-sm">{editingItem.artist}</p>
+                </div>
+              </div>
+
+              <p className="text-sh-grey mb-2 text-xs font-bold tracking-widest">
+                YOUR RATING <span className="text-red-400">*</span>
+              </p>
+              <StarRating value={editRating} onChange={setEditRating} />
+
+              <p className="text-sh-grey mb-2 mt-5 text-xs font-bold tracking-widest">
+                REVIEW <span className="opacity-40">(OPTIONAL)</span>
+              </p>
+              <textarea
+                value={editReview}
+                onChange={(e) => setEditReview(e.target.value)}
+                placeholder="What did you think?"
+                rows={3}
+                className="bg-c-grey border-b-grey text-p-white placeholder:text-sh-grey w-full resize-none rounded-xl border px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+
+              <div className="mt-5 flex gap-3">
+                <button
+                  onClick={() => setEditingItem(null)}
+                  className="border-b-grey text-sh-grey hover:text-p-white flex-1 rounded-xl border py-3 text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={updateAlbum}
+                  disabled={editSaving || editRating === 0}
+                  className="flex-1 rounded-xl py-3 text-sm font-bold tracking-widest transition-all disabled:opacity-40"
+                  style={{
+                    background: editRating > 0 ? "linear-gradient(135deg, #40bcf4, #00e054)" : "#1a2030",
+                    color: editRating > 0 ? "#0a0e14" : "#6b7a8d",
+                    boxShadow: editRating > 0 ? "0 0 20px rgba(64,188,244,0.25)" : "none",
+                  }}
+                >
+                  {editSaving ? "Saving…" : "SAVE CHANGES"}
+                </button>
+              </div>
+
+              <div className="mt-3 text-center">
+                <button
+                  onClick={() => { deleteAlbum(editingItem); setEditingItem(null); }}
+                  className="text-red-400 text-xs underline opacity-70 hover:opacity-100 transition-opacity"
+                >
+                  Remove entry
                 </button>
               </div>
             </div>
